@@ -1,11 +1,7 @@
+// postcss.config.cjs
 module.exports = {
   plugins: {
     "@tailwindcss/postcss": {},
-    "tw-animate-css": {},
-  },
-  postcss: {
-    discardDuplicates: {
-      exclude: ["**/*.animations.css"],
-    },
+    "@tw-animate-css": {},
   },
 };
