@@ -166,11 +166,6 @@ export default function SqlEditor() {
 
       const docText = ctx.state.doc.toString().toLowerCase();
       const cursorPos = ctx.pos;
-      const tokens = docText
-        .slice(0, cursorPos)
-        .split(/[\s,]+/)
-        .filter(Boolean)
-        .map((t) => t.trim());
 
       // Already selected fields between SELECT and FROM
       const selectMatch = docText.match(/^select\s+(.+?)\s+from/i)?.[1];
