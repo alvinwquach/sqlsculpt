@@ -13,7 +13,6 @@ import {
 import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap } from "@codemirror/view";
 
-// Power Rangers Data Structure with Column Types
 const powerRangersData = {
   tableName: "power_rangers",
   data: [
@@ -116,7 +115,7 @@ const powerRangersData = {
   ],
 };
 
-export default function SqlEditor() {
+export default function DatabaseEditor() {
   const editorRef = useRef<EditorView | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
