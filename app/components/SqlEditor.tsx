@@ -125,7 +125,6 @@ export default function SqlEditor() {
       setResult("No query entered");
       return true;
     }
-
     const selectMatch = query.match(/^select\s+(.+?)\s+from\s+/i);
     const fromMatch = query.includes("from power_rangers");
 
@@ -148,6 +147,7 @@ export default function SqlEditor() {
     const fields = rawFields.includes("*")
       ? powerRangersData.columns.map((col) => col.name)
       : rawFields;
+
     const resultData = powerRangersData.data.map((row) =>
       Object.fromEntries(
         fields.map((field) => [field, row[field as keyof typeof row]])
@@ -171,7 +171,6 @@ export default function SqlEditor() {
       const alreadySelectedFields =
         selectMatch?.split(",").map((f) => f.trim().toLowerCase()) || [];
 
-      // 1. Empty editor or just whitespace, suggest SELECT
       if (/^\s*$/.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -193,10 +192,7 @@ export default function SqlEditor() {
           detail: "all columns",
           apply: "*",
         });
-        return {
-          from: word?.from ?? cursorPos,
-          options,
-        };
+        return { from: word?.from ?? cursorPos, options };
       }
 
       // 3. After SELECT with fields or comma, suggest only remaining columns
@@ -213,10 +209,7 @@ export default function SqlEditor() {
             detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
             apply: `, ${col.name}`,
           }));
-        return {
-          from: word?.from ?? cursorPos,
-          options,
-        };
+        return { from: word?.from ?? cursorPos, options };
       }
 
       // 4. After SELECT * or valid fields, suggest FROM
@@ -251,14 +244,19 @@ export default function SqlEditor() {
     const state = EditorState.create({
       doc: "",
       extensions: [
-        basicSetup,
         sql(),
         oneDark,
         keymap.of([
-          ...defaultKeymap,
           indentWithTab,
+          {
+            key: "Mod-Enter",
+            run: (view) => {
+              runQuery(view);
+              return true;
+            },
+          },
           { key: "Ctrl-Space", run: startCompletion },
-          { key: "Mod-Enter", run: (view) => runQuery(view) },
+          ...defaultKeymap,
         ]),
         autocompletion({ override: [completion], activateOnTyping: false }),
       ],
@@ -270,7 +268,6 @@ export default function SqlEditor() {
     });
 
     editorRef.current = view;
-
     return () => {
       view.destroy();
     };
@@ -283,12 +280,17 @@ export default function SqlEditor() {
           id="editor"
           className="h-[70vh] border border-slate-700 rounded-xl bg-[#1e293b] p-3 text-sm"
         />
-        <button
-          onClick={() => editorRef.current && runQuery(editorRef.current)}
-          className="mt-4 px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-semibold transition"
-        >
-          ▶ Run Query
-        </button>
+        <div className="relative group inline-block">
+          <button
+            onClick={() => editorRef.current && runQuery(editorRef.current)}
+            className="mt-4 px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl font-semibold transition"
+          >
+            ▶ Run Query
+          </button>
+          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-700 text-white text-xs rounded px-3 py-1 whitespace-nowrap shadow-lg">
+            Ctrl+Enter / ⌘+Enter
+          </div>
+        </div>
       </div>
       <div className="w-full md:w-1/2 bg-[#1e293b] rounded-xl p-4 overflow-auto text-sm border border-slate-700">
         {result ? (
