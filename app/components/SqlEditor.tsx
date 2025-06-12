@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { EditorView, basicSetup } from "codemirror";
+import { EditorView } from "codemirror";
 import { sql } from "@codemirror/lang-sql";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
