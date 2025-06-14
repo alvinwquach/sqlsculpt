@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { EditorView } from "codemirror";
 import { sql } from "@codemirror/lang-sql";
@@ -12,8 +11,32 @@ import {
 } from "@codemirror/autocomplete";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap } from "@codemirror/view";
+import { Braces, TableIcon } from "lucide-react";
 
-const powerRangersData = {
+interface PowerRanger {
+  id: number;
+  user: string;
+  ranger_color: string;
+  zord: string;
+  weapon: string;
+  season: string;
+  joined_date: string;
+  status: string;
+  power_level: number;
+  location: string;
+}
+
+interface PowerRangersData {
+  tableName: string;
+  data: PowerRanger[];
+  columns: Array<{
+    name: string;
+    type: string;
+    notNull: boolean;
+  }>;
+}
+
+const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
   data: [
     {
@@ -115,9 +138,46 @@ const powerRangersData = {
   ],
 };
 
+const ViewToggle = ({
+  onViewModeChange,
+}: {
+  onViewModeChange?: (mode: "json" | "table") => void;
+}) => {
+  const [viewMode, setViewMode] = useState<"json" | "table">("json");
+
+  const handleModeChange = (mode: "json" | "table") => {
+    setViewMode(mode);
+    onViewModeChange?.(mode);
+  };
+
+  return (
+    <div className="flex gap-2">
+      <button
+        onClick={() => handleModeChange("json")}
+        className={`px-3 py-2 rounded-l-md bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-green-500 ${
+          viewMode === "json" ? "border-green-500" : ""
+        }`}
+      >
+        <Braces className="w-4 h-4 mr-2 inline-block" />
+        JSON
+      </button>
+      <button
+        onClick={() => handleModeChange("table")}
+        className={`px-3 py-2 rounded-r-md bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-green-500 ${
+          viewMode === "table" ? "border-green-500" : ""
+        }`}
+      >
+        <TableIcon className="w-4 h-4 mr-2 inline-block" />
+        Table
+      </button>
+    </div>
+  );
+};
+
 export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"json" | "table">("json");
 
   const runQuery = (view: EditorView): boolean => {
     const query = view.state.doc.toString().trim().toLowerCase();
@@ -125,9 +185,9 @@ export default function SqlEditor() {
       setResult("No query entered");
       return true;
     }
+
     const selectMatch = query.match(/^select\s+(.+?)\s+from\s+/i);
     const fromMatch = query.includes("from power_rangers");
-
     if (!selectMatch || !fromMatch) {
       setResult("Error: Query must be 'SELECT <fields> FROM power_rangers'");
       return true;
@@ -162,14 +222,14 @@ export default function SqlEditor() {
     const completion = (ctx: CompletionContext) => {
       const word = ctx.matchBefore(/[\w*]+/);
       if (!ctx.explicit && !word) return null;
-
       const docText = ctx.state.doc.toString().toLowerCase();
       const cursorPos = ctx.pos;
 
       // Already selected fields between SELECT and FROM
       const selectMatch = docText.match(/^select\s+(.+?)\s+from/i)?.[1];
-      const alreadySelectedFields =
-        selectMatch?.split(",").map((f) => f.trim().toLowerCase()) || [];
+      const alreadySelectedFields = selectMatch
+        ? selectMatch.split(",").map((f) => f.trim().toLowerCase())
+        : [];
 
       if (/^\s*$/.test(docText)) {
         return {
@@ -216,7 +276,7 @@ export default function SqlEditor() {
       if (
         /^select\s+[\w\s*,]+\s*$/i.test(docText) &&
         !docText.includes("from") &&
-        !/,\s*$/.test(docText)
+        !/,\\s*$/.test(docText)
       ) {
         return {
           from: word?.from ?? cursorPos,
@@ -268,13 +328,83 @@ export default function SqlEditor() {
     });
 
     editorRef.current = view;
+
     return () => {
       view.destroy();
     };
   }, []);
 
+  const renderResult = () => {
+    if (!result) {
+      return (
+        <div className="text-center text-slate-400 italic py-8">
+          The results of your query will appear here.
+        </div>
+      );
+    }
+
+    if (viewMode === "json") {
+      return (
+        <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+          {result}
+        </pre>
+      );
+    }
+
+    try {
+      const jsonData = JSON.parse(result);
+      return (
+        <div className="w-full overflow-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-900">
+                {Object.keys(jsonData[0]).map((key: string) => (
+                  <th
+                    key={key}
+                    className="p-3 text-left text-green-400 font-medium"
+                  >
+                    {key}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {jsonData.map((row: PowerRanger, rowIndex: number) => (
+                <tr
+                  key={rowIndex}
+                  className={
+                    rowIndex % 2 === 0 ? "bg-slate-800" : "bg-slate-900"
+                  }
+                >
+                  {Object.values(row).map(
+                    (value: string | number, colIndex: number) => (
+                      <td
+                        key={colIndex}
+                        className="p-3 text-green-200 border-b border-slate-700"
+                      >
+                        <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                          {String(value)}
+                        </pre>
+                      </td>
+                    )
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    } catch (error) {
+      return (
+        <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+          {result}
+        </pre>
+      );
+    }
+  };
+
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-[#0f172a] text-white p-4 space-y-4 md:space-y-0 md:space-x-4 font-mono">
+    <div className="flex flex-col md:flex-row h-screen bg-[#0f172a] text-white p-6 space-y-4 md:space-y-0 md:space-x-4 font-mono">
       <div className="w-full md:w-1/2">
         <div
           id="editor"
@@ -293,13 +423,10 @@ export default function SqlEditor() {
         </div>
       </div>
       <div className="w-full md:w-1/2 bg-[#1e293b] rounded-xl p-4 overflow-auto text-sm border border-slate-700">
-        {result ? (
-          <pre className="text-green-300 whitespace-pre-wrap">{result}</pre>
-        ) : (
-          <p className="text-slate-400">
-            The results of your query will appear here.
-          </p>
-        )}
+        <div className="flex justify-end mb-4">
+          <ViewToggle onViewModeChange={setViewMode} />
+        </div>
+        {renderResult()}
       </div>
     </div>
   );

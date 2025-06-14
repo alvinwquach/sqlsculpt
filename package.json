@@ -13,7 +13,6 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "@codemirror/lang-sql": "github:codemirror/lang-sql",
     "@codemirror/lang-javascript": "^6.2.4",
     "@codemirror/lang-sql": "^6.9.0",
     "@codemirror/theme-one-dark": "^6.1.2",
@@ -33,6 +32,7 @@
     "postcss": "^8.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-icons": "^5.5.0",
     "tailwind-merge": "^3.3.0"
   },
   "devDependencies": {
