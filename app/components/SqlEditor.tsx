@@ -372,6 +372,7 @@ export default function SqlEditor() {
         </div>
       );
     } catch (error) {
+      console.error("JSON parsing error:", error);
       return (
         <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
           {result}
