@@ -26,6 +26,7 @@ interface PowerRanger {
   power_level: number;
   location: string;
 }
+
 interface PowerRangersData {
   tableName: string;
   data: PowerRanger[];
@@ -35,6 +36,7 @@ interface PowerRangersData {
     notNull: boolean;
   }>;
 }
+
 const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
   data: [
@@ -171,7 +173,7 @@ const ViewToggle = ({
   );
 };
 
-export default function DatabaseEditor() {
+export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
@@ -222,7 +224,7 @@ export default function DatabaseEditor() {
 
     const resultData = powerRangersData.data.map((row) =>
       Object.fromEntries(
-        fields.map((field) => [field, row[field as keyof typeof row]])
+        fields.map((field) => [field, row[field as keyof PowerRanger]])
       )
     );
 
@@ -239,10 +241,11 @@ export default function DatabaseEditor() {
 
       const selectMatch = docText.match(/^select\s+(.+?)\s+from/i)?.[1];
       const alreadySelectedFields = selectMatch
-        ? selectMatch.split(",").map((f) => f.trim().toLowerCase())
+        ? selectMatch.split(",").map((f) => f.trim())
         : [];
 
-      if (/^\s*$/.test(docText)) {
+      // SELECT keyword completion
+      if (/^select\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
           options: [
@@ -382,7 +385,7 @@ export default function DatabaseEditor() {
     }
 
     if (isJson(result)) {
-      const jsonData = JSON.parse(result);
+      const jsonData: PowerRanger[] = JSON.parse(result);
       return (
         <div className="w-full overflow-auto">
           <table className="w-full border-collapse">
@@ -399,7 +402,7 @@ export default function DatabaseEditor() {
               </tr>
             </thead>
             <tbody>
-              {jsonData.map((row: any, rowIndex: number) => (
+              {jsonData.map((row, rowIndex) => (
                 <tr
                   key={rowIndex}
                   className={
