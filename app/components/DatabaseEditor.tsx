@@ -37,6 +37,18 @@ interface PowerRangersData {
   }>;
 }
 
+interface DescribeResult {
+  field: string;
+  type: string;
+  null: string;
+}
+
+interface ShowTablesResult {
+  table_name: string;
+}
+
+type QueryResult = Partial<PowerRanger> | DescribeResult | ShowTablesResult;
+
 const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
   data: [
@@ -187,17 +199,21 @@ export default function SqlEditor() {
     }
 
     if (query === "show tables") {
-      const showTablesResult = [{ table_name: powerRangersData.tableName }];
+      const showTablesResult: ShowTablesResult[] = [
+        { table_name: powerRangersData.tableName },
+      ];
       setResult(JSON.stringify(showTablesResult, null, 2));
       return true;
     }
 
     if (query === "describe power_rangers") {
-      const describeResult = powerRangersData.columns.map((col) => ({
-        field: col.name,
-        type: col.type,
-        null: col.notNull ? "NO" : "YES",
-      }));
+      const describeResult: DescribeResult[] = powerRangersData.columns.map(
+        (col) => ({
+          field: col.name,
+          type: col.type,
+          null: col.notNull ? "NO" : "YES",
+        })
+      );
       setResult(JSON.stringify(describeResult, null, 2));
       return true;
     }
@@ -236,10 +252,11 @@ export default function SqlEditor() {
       return true;
     }
 
-    const resultData = powerRangersData.data.map((row) =>
-      Object.fromEntries(
-        fields.map((field) => [field, row[field as keyof PowerRanger]])
-      )
+    const resultData: Partial<PowerRanger>[] = powerRangersData.data.map(
+      (row) =>
+        Object.fromEntries(
+          fields.map((field) => [field, row[field as keyof PowerRanger]])
+        )
     );
 
     setResult(JSON.stringify(resultData, null, 2));
@@ -409,7 +426,7 @@ export default function SqlEditor() {
     }
 
     if (isJson(result)) {
-      const jsonData = JSON.parse(result);
+      const jsonData: QueryResult[] = JSON.parse(result);
       return (
         <div className="w-full overflow-auto">
           <table className="w-full border-collapse">
@@ -426,21 +443,23 @@ export default function SqlEditor() {
               </tr>
             </thead>
             <tbody>
-              {jsonData.map((row: any, rowIndex: number) => (
+              {jsonData.map((row: QueryResult, rowIndex: number) => (
                 <tr
                   key={rowIndex}
                   className={
                     rowIndex % 2 === 0 ? "bg-slate-800" : "bg-slate-900"
                   }
                 >
-                  {Object.values(row).map((value: any, colIndex: number) => (
-                    <td
-                      key={colIndex}
-                      className="p-3 text-green-200 border-b border-slate-700"
-                    >
-                      {String(value)}
-                    </td>
-                  ))}
+                  {Object.values(row).map(
+                    (value: string | number, colIndex: number) => (
+                      <td
+                        key={colIndex}
+                        className="p-3 text-green-200 border-b border-slate-700"
+                      >
+                        {String(value)}
+                      </td>
+                    )
+                  )}
                 </tr>
               ))}
             </tbody>
