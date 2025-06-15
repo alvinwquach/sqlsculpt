@@ -1,9 +1,9 @@
-import SqlEditor from "./components/SqlEditor";
+import DatabaseEditor from "./components/DatabaseEditor";
 
 export default function Page() {
   return (
     <main className="min-h-screen bg-black text-white">
-      <SqlEditor />
+      <DatabaseEditor />
     </main>
   );
 }

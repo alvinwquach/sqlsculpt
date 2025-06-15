@@ -136,6 +136,7 @@ const powerRangersData: PowerRangersData = {
     { name: "location", type: "text", notNull: true },
   ],
 };
+
 const ViewToggle = ({
   onViewModeChange,
 }: {
@@ -169,61 +170,99 @@ const ViewToggle = ({
     </div>
   );
 };
-export default function SqlEditor() {
+
+export default function DatabaseEditor() {
   const editorRef = useRef<EditorView | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
 
   const runQuery = (view: EditorView): boolean => {
     const query = view.state.doc.toString().trim().toLowerCase();
+
     if (!query) {
       setResult("No query entered");
       return true;
     }
-    const selectMatch = query.match(/^select\s+(.+?)\s+from\s+/i);
-    const fromMatch = query.includes("from power_rangers");
-    if (!selectMatch || !fromMatch) {
-      setResult("Error: Query must be 'SELECT <fields> FROM power_rangers'");
+
+    if (query === "describe power_rangers") {
+      const describeResult = powerRangersData.columns.map((col) => ({
+        field: col.name,
+        type: col.type,
+        null: col.notNull ? "NO" : "YES",
+      }));
+      setResult(JSON.stringify(describeResult, null, 2));
       return true;
     }
+
+    const selectMatch = query.match(/^select\s+(.+?)\s+from\s+/i);
+    const fromMatch = query.includes("from power_rangers");
+
+    if (!selectMatch || !fromMatch) {
+      setResult(
+        "Error: Query must be 'SELECT <fields> FROM power_rangers' or 'DESCRIBE power_rangers'"
+      );
+      return true;
+    }
+
     const rawFields = selectMatch[1].split(",").map((f) => f.trim());
+
     if (new Set(rawFields).size !== rawFields.length) {
       setResult("Error: Duplicate field names are not allowed");
       return true;
     }
+
     if (rawFields.includes("*") && rawFields.length > 1) {
       setResult("Error: Cannot mix * with specific fields");
       return true;
     }
+
     const fields = rawFields.includes("*")
       ? powerRangersData.columns.map((col) => col.name)
       : rawFields;
+
     const resultData = powerRangersData.data.map((row) =>
       Object.fromEntries(
         fields.map((field) => [field, row[field as keyof typeof row]])
       )
     );
+
     setResult(JSON.stringify(resultData, null, 2));
     return true;
   };
+
   useEffect(() => {
     const completion = (ctx: CompletionContext) => {
       const word = ctx.matchBefore(/[\w*]+/);
       if (!ctx.explicit && !word) return null;
       const docText = ctx.state.doc.toString().toLowerCase();
       const cursorPos = ctx.pos;
-      // Already selected fields between SELECT and FROM
+
       const selectMatch = docText.match(/^select\s+(.+?)\s+from/i)?.[1];
       const alreadySelectedFields = selectMatch
         ? selectMatch.split(",").map((f) => f.trim().toLowerCase())
         : [];
+
       if (/^\s*$/.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
-          options: [{ label: "SELECT", type: "keyword", apply: "SELECT " }],
+          options: [
+            { label: "SELECT", type: "keyword", apply: "SELECT " },
+            { label: "DESCRIBE", type: "keyword", apply: "DESCRIBE " },
+          ],
         };
       }
-      // 2. After SELECT, suggest * or columns (only if no fields selected yet)
+
+      // After typing 'DESCRIBE '
+      if (/^describe\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            { label: "power_rangers", type: "table", apply: "power_rangers" },
+          ],
+        };
+      }
+
+      // SELECT completion
       if (/^select\s*$/i.test(docText)) {
         const options = powerRangersData.columns.map((col) => ({
           label: col.name,
@@ -239,7 +278,7 @@ export default function SqlEditor() {
         });
         return { from: word?.from ?? cursorPos, options };
       }
-      // 3. After SELECT with fields or comma, suggest only remaining columns
+
       if (
         /^select\s+[\w\s,]+$/i.test(docText) &&
         /,\s*$/.test(docText) &&
@@ -255,18 +294,17 @@ export default function SqlEditor() {
           }));
         return { from: word?.from ?? cursorPos, options };
       }
-      // 4. After SELECT * or valid fields, suggest FROM
+
       if (
         /^select\s+[\w\s*,]+\s*$/i.test(docText) &&
-        !docText.includes("from") &&
-        !/,\\s*$/.test(docText)
+        !docText.includes("from")
       ) {
         return {
           from: word?.from ?? cursorPos,
           options: [{ label: "FROM", type: "keyword", apply: " FROM " }],
         };
       }
-      // 5. After FROM, suggest power_rangers table
+
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -279,8 +317,10 @@ export default function SqlEditor() {
           ],
         };
       }
+
       return null;
     };
+
     const state = EditorState.create({
       doc: "",
       extensions: [
@@ -301,15 +341,26 @@ export default function SqlEditor() {
         autocompletion({ override: [completion], activateOnTyping: false }),
       ],
     });
+
     const view = new EditorView({
       state,
       parent: document.getElementById("editor")!,
     });
+
     editorRef.current = view;
     return () => {
       view.destroy();
     };
   }, []);
+
+  const isJson = (str: string) => {
+    try {
+      JSON.parse(str);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   const renderResult = () => {
     if (!result) {
@@ -321,21 +372,23 @@ export default function SqlEditor() {
     }
 
     if (viewMode === "json") {
-      return (
+      return isJson(result) ? (
         <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
           {result}
         </pre>
+      ) : (
+        <div className="text-red-400">Error: Invalid JSON format</div>
       );
     }
 
-    try {
-      const jsonData = JSON.parse(result) as PowerRanger[];
+    if (isJson(result)) {
+      const jsonData = JSON.parse(result);
       return (
         <div className="w-full overflow-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-slate-900">
-                {Object.keys(jsonData[0]).map((key) => (
+                {Object.keys(jsonData[0] ?? {}).map((key) => (
                   <th
                     key={key}
                     className="p-3 text-left text-green-400 font-medium"
@@ -346,7 +399,7 @@ export default function SqlEditor() {
               </tr>
             </thead>
             <tbody>
-              {jsonData.map((row, rowIndex) => (
+              {jsonData.map((row: any, rowIndex: number) => (
                 <tr
                   key={rowIndex}
                   className={
@@ -369,15 +422,14 @@ export default function SqlEditor() {
           </table>
         </div>
       );
-    } catch (error) {
-      console.error("JSON parsing error:", error);
+    } else {
       return (
         <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
           {result}
         </pre>
       );
     }
-  };  
+  };
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#0f172a] text-white p-6 space-y-4 md:space-y-0 md:space-x-4 font-mono">
