@@ -37,6 +37,18 @@ interface PowerRangersData {
   }>;
 }
 
+interface DescribeResult {
+  field: string;
+  type: string;
+  null: string;
+}
+
+interface ShowTablesResult {
+  table_name: string;
+}
+
+type QueryResult = Partial<PowerRanger> | DescribeResult | ShowTablesResult;
+
 const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
   data: [
@@ -186,12 +198,22 @@ export default function SqlEditor() {
       return true;
     }
 
+    if (query === "show tables") {
+      const showTablesResult: ShowTablesResult[] = [
+        { table_name: powerRangersData.tableName },
+      ];
+      setResult(JSON.stringify(showTablesResult, null, 2));
+      return true;
+    }
+
     if (query === "describe power_rangers") {
-      const describeResult = powerRangersData.columns.map((col) => ({
-        field: col.name,
-        type: col.type,
-        null: col.notNull ? "NO" : "YES",
-      }));
+      const describeResult: DescribeResult[] = powerRangersData.columns.map(
+        (col) => ({
+          field: col.name,
+          type: col.type,
+          null: col.notNull ? "NO" : "YES",
+        })
+      );
       setResult(JSON.stringify(describeResult, null, 2));
       return true;
     }
@@ -201,7 +223,7 @@ export default function SqlEditor() {
 
     if (!selectMatch || !fromMatch) {
       setResult(
-        "Error: Query must be 'SELECT <fields> FROM power_rangers' or 'DESCRIBE power_rangers'"
+        "Error: Query must be 'SELECT <fields> FROM power_rangers', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
       );
       return true;
     }
@@ -222,10 +244,19 @@ export default function SqlEditor() {
       ? powerRangersData.columns.map((col) => col.name)
       : rawFields;
 
-    const resultData = powerRangersData.data.map((row) =>
-      Object.fromEntries(
-        fields.map((field) => [field, row[field as keyof PowerRanger]])
-      )
+    const invalidFields = fields.filter(
+      (field) => !powerRangersData.columns.some((col) => col.name === field)
+    );
+    if (invalidFields.length > 0) {
+      setResult(`Error: Invalid field(s): ${invalidFields.join(", ")}`);
+      return true;
+    }
+
+    const resultData: Partial<PowerRanger>[] = powerRangersData.data.map(
+      (row) =>
+        Object.fromEntries(
+          fields.map((field) => [field, row[field as keyof PowerRanger]])
+        )
     );
 
     setResult(JSON.stringify(resultData, null, 2));
@@ -234,28 +265,32 @@ export default function SqlEditor() {
 
   useEffect(() => {
     const completion = (ctx: CompletionContext) => {
-      const word = ctx.matchBefore(/[\w*]+/);
-      if (!ctx.explicit && !word) return null;
+      const word = ctx.matchBefore(/[\w*]*/); // Allow empty match for keywords
       const docText = ctx.state.doc.toString().toLowerCase();
       const cursorPos = ctx.pos;
 
+      // Already selected fields between SELECT and FROM
       const selectMatch = docText.match(/^select\s+(.+?)\s+from/i)?.[1];
       const alreadySelectedFields = selectMatch
-        ? selectMatch.split(",").map((f) => f.trim())
+        ? selectMatch.split(",").map((f) => f.trim().toLowerCase())
         : [];
 
-      // SELECT keyword completion
-      if (/^select\s*$/i.test(docText)) {
+      // 1. Empty editor or partial keyword: suggest SELECT, DESCRIBE, SHOW TABLES
+      if (
+        /^\s*$/.test(docText) ||
+        /^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)
+      ) {
         return {
           from: word?.from ?? cursorPos,
           options: [
             { label: "SELECT", type: "keyword", apply: "SELECT " },
             { label: "DESCRIBE", type: "keyword", apply: "DESCRIBE " },
+            { label: "SHOW TABLES", type: "keyword", apply: "SHOW TABLES" },
           ],
         };
       }
 
-      // After typing 'DESCRIBE '
+      // 2. After DESCRIBE, suggest power_rangers table
       if (/^describe\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -265,7 +300,7 @@ export default function SqlEditor() {
         };
       }
 
-      // SELECT completion
+      // 3. After SELECT, suggest * or columns
       if (/^select\s*$/i.test(docText)) {
         const options = powerRangersData.columns.map((col) => ({
           label: col.name,
@@ -282,25 +317,30 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options };
       }
 
+      // 4. After SELECT with fields or comma, suggest only remaining columns
       if (
         /^select\s+[\w\s,]+$/i.test(docText) &&
         /,\s*$/.test(docText) &&
         !docText.includes("from")
       ) {
         const options = powerRangersData.columns
-          .filter((col) => !alreadySelectedFields.includes(col.name))
+          .filter(
+            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
+          )
           .map((col) => ({
             label: col.name,
             type: "field",
             detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            apply: `, ${col.name}`,
+            apply: col.name,
           }));
         return { from: word?.from ?? cursorPos, options };
       }
 
+      // 5. After SELECT * or valid fields, suggest FROM
       if (
         /^select\s+[\w\s*,]+\s*$/i.test(docText) &&
-        !docText.includes("from")
+        !docText.includes("from") &&
+        !/,\s*$/.test(docText)
       ) {
         return {
           from: word?.from ?? cursorPos,
@@ -308,6 +348,7 @@ export default function SqlEditor() {
         };
       }
 
+      // 6. After FROM, suggest power_rangers table
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -341,7 +382,7 @@ export default function SqlEditor() {
           { key: "Ctrl-Space", run: startCompletion },
           ...defaultKeymap,
         ]),
-        autocompletion({ override: [completion], activateOnTyping: false }),
+        autocompletion({ override: [completion], activateOnTyping: true }),
       ],
     });
 
@@ -385,7 +426,7 @@ export default function SqlEditor() {
     }
 
     if (isJson(result)) {
-      const jsonData: PowerRanger[] = JSON.parse(result);
+      const jsonData: QueryResult[] = JSON.parse(result);
       return (
         <div className="w-full overflow-auto">
           <table className="w-full border-collapse">
@@ -402,23 +443,23 @@ export default function SqlEditor() {
               </tr>
             </thead>
             <tbody>
-              {jsonData.map((row, rowIndex) => (
+              {jsonData.map((row: QueryResult, rowIndex: number) => (
                 <tr
                   key={rowIndex}
                   className={
                     rowIndex % 2 === 0 ? "bg-slate-800" : "bg-slate-900"
                   }
                 >
-                  {Object.values(row).map((value, colIndex) => (
-                    <td
-                      key={colIndex}
-                      className="p-3 text-green-200 border-b border-slate-700"
-                    >
-                      <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                  {Object.values(row).map(
+                    (value: string | number, colIndex: number) => (
+                      <td
+                        key={colIndex}
+                        className="p-3 text-green-200 border-b border-slate-700"
+                      >
                         {String(value)}
-                      </pre>
-                    </td>
-                  ))}
+                      </td>
+                    )
+                  )}
                 </tr>
               ))}
             </tbody>
