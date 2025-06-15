@@ -329,13 +329,13 @@ export default function SqlEditor() {
     }
 
     try {
-      const jsonData = JSON.parse(result);
+      const jsonData = JSON.parse(result) as PowerRanger[];
       return (
         <div className="w-full overflow-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-slate-900">
-                {Object.keys(jsonData[0]).map((key: string) => (
+                {Object.keys(jsonData[0]).map((key) => (
                   <th
                     key={key}
                     className="p-3 text-left text-green-400 font-medium"
@@ -346,25 +346,23 @@ export default function SqlEditor() {
               </tr>
             </thead>
             <tbody>
-              {jsonData.map((row: PowerRanger, rowIndex: number) => (
+              {jsonData.map((row, rowIndex) => (
                 <tr
                   key={rowIndex}
                   className={
                     rowIndex % 2 === 0 ? "bg-slate-800" : "bg-slate-900"
                   }
                 >
-                  {Object.values(row).map(
-                    (value: string | number, colIndex: number) => (
-                      <td
-                        key={colIndex}
-                        className="p-3 text-green-200 border-b border-slate-700"
-                      >
-                        <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
-                          {String(value)}
-                        </pre>
-                      </td>
-                    )
-                  )}
+                  {Object.values(row).map((value, colIndex) => (
+                    <td
+                      key={colIndex}
+                      className="p-3 text-green-200 border-b border-slate-700"
+                    >
+                      <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                        {String(value)}
+                      </pre>
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -379,7 +377,7 @@ export default function SqlEditor() {
         </pre>
       );
     }
-  };
+  };  
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#0f172a] text-white p-6 space-y-4 md:space-y-0 md:space-x-4 font-mono">
