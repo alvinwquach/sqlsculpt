@@ -371,13 +371,14 @@ export default function SqlEditor() {
     }
 
     try {
-      const jsonData = JSON.parse(result);
+      const jsonData = JSON.parse(result) as PowerRanger[];
       return (
         <div className="w-full overflow-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-slate-900">
                 {Object.keys(jsonData[0] ?? {}).map((key) => (
+                {Object.keys(jsonData[0]).map((key) => (
                   <th
                     key={key}
                     className="p-3 text-left text-green-400 font-medium"
@@ -389,6 +390,7 @@ export default function SqlEditor() {
             </thead>
             <tbody>
               {jsonData.map((row: any, rowIndex: number) => (
+              {jsonData.map((row, rowIndex) => (
                 <tr
                   key={rowIndex}
                   className={
@@ -418,7 +420,7 @@ export default function SqlEditor() {
         </pre>
       );
     }
-  };
+  };  
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-[#0f172a] text-white p-6 space-y-4 md:space-y-0 md:space-x-4 font-mono">
