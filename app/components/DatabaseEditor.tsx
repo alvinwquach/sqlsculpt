@@ -49,7 +49,7 @@ interface ShowTablesResult {
 
 type QueryResult = Partial<PowerRanger> | DescribeResult | ShowTablesResult;
 
-const powerRangersData: PowerRangersData = {
+export const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
   data: [
     {
@@ -151,16 +151,18 @@ const powerRangersData: PowerRangersData = {
   ],
 };
 
-const ViewToggle = ({
-  onViewModeChange,
-}: {
+interface ViewToggleProps {
   onViewModeChange?: (mode: "json" | "table") => void;
-}) => {
+}
+
+function ViewToggle({ onViewModeChange }: ViewToggleProps) {
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
+
   const handleModeChange = (mode: "json" | "table") => {
     setViewMode(mode);
     onViewModeChange?.(mode);
   };
+
   return (
     <div className="flex gap-2">
       <button
@@ -183,7 +185,7 @@ const ViewToggle = ({
       </button>
     </div>
   );
-};
+}
 
 export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
@@ -230,7 +232,8 @@ export default function SqlEditor() {
 
     const rawFields = selectMatch[1].split(",").map((f) => f.trim());
 
-    if (new Set(rawFields).size !== rawFields.length) {
+    const uniqueFields = new Set(rawFields);
+    if (uniqueFields.size !== rawFields.length) {
       setResult("Error: Duplicate field names are not allowed");
       return true;
     }
@@ -269,10 +272,12 @@ export default function SqlEditor() {
       const docText = ctx.state.doc.toString().toLowerCase();
       const cursorPos = ctx.pos;
 
-      // Already selected fields between SELECT and FROM
-      const selectMatch = docText.match(/^select\s+(.+?)\s+from/i)?.[1];
+      // Parse selected fields dynamically based on current editor content
+      const selectMatch = docText
+        .substring(0, cursorPos)
+        .match(/^select\s+(.+?)(?:\s+from|$)/i);
       const alreadySelectedFields = selectMatch
-        ? selectMatch.split(",").map((f) => f.trim().toLowerCase())
+        ? selectMatch[1].split(",").map((f) => f.trim().toLowerCase())
         : [];
 
       // 1. Empty editor or partial keyword: suggest SELECT, DESCRIBE, SHOW TABLES
@@ -300,14 +305,18 @@ export default function SqlEditor() {
         };
       }
 
-      // 3. After SELECT, suggest * or columns
+      // 3. After SELECT, suggest * or remaining columns
       if (/^select\s*$/i.test(docText)) {
-        const options = powerRangersData.columns.map((col) => ({
-          label: col.name,
-          type: "field",
-          detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-          apply: col.name,
-        }));
+        const options = powerRangersData.columns
+          .filter(
+            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
+          )
+          .map((col) => ({
+            label: col.name,
+            type: "field",
+            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+            apply: col.name,
+          }));
         options.unshift({
           label: "*",
           type: "field",
@@ -320,7 +329,7 @@ export default function SqlEditor() {
       // 4. After SELECT with fields or comma, suggest only remaining columns
       if (
         /^select\s+[\w\s,]+$/i.test(docText) &&
-        /,\s*$/.test(docText) &&
+        /,\s*$/.test(docText.substring(0, cursorPos)) &&
         !docText.includes("from")
       ) {
         const options = powerRangersData.columns
@@ -489,8 +498,15 @@ export default function SqlEditor() {
           >
             ▶ Run Query
           </button>
-          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-700 text-white text-xs rounded px-3 py-1 whitespace-nowrap shadow-lg">
-            Ctrl+Enter / ⌘+Enter
+          <div className="relative group inline-block">
+            <button
+              onClick={() => editorRef.current && runQuery(editorRef.current)}
+              className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block
+              bg-gray-700 text-white text-xs rounded px-3 py-1.5 whitespace-nowrap shadow-lg
+              animate-in fade-in slide-in-from-bottom-2"
+            >
+              {navigator.platform.includes("Mac") ? "⌘+Enter" : "Ctrl+Enter"}
+            </button>
           </div>
         </div>
       </div>
