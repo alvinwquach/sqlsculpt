@@ -192,15 +192,23 @@ export default function SqlEditor() {
   const [result, setResult] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
 
+  const formatColumnName = (columnName: string): string => {
+    return columnName
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+  };
+
   const runQuery = (view: EditorView): boolean => {
-    const query = view.state.doc.toString().trim().toLowerCase();
+    const query = view.state.doc.toString().trim();
 
     if (!query) {
       setResult("No query entered");
       return true;
     }
 
-    if (query === "show tables") {
+    const lowerQuery = query.toLowerCase();
+    if (lowerQuery === "show tables") {
       const showTablesResult: ShowTablesResult[] = [
         { table_name: powerRangersData.tableName },
       ];
@@ -208,7 +216,7 @@ export default function SqlEditor() {
       return true;
     }
 
-    if (query === "describe power_rangers") {
+    if (lowerQuery === "describe power_rangers") {
       const describeResult: DescribeResult[] = powerRangersData.columns.map(
         (col) => ({
           field: col.name,
@@ -221,7 +229,7 @@ export default function SqlEditor() {
     }
 
     const selectMatch = query.match(/^select\s+(.+?)\s+from\s+/i);
-    const fromMatch = query.includes("from power_rangers");
+    const fromMatch = lowerQuery.includes("from power_rangers");
 
     if (!selectMatch || !fromMatch) {
       setResult(
@@ -230,24 +238,38 @@ export default function SqlEditor() {
       return true;
     }
 
-    const rawFields = selectMatch[1].split(",").map((f) => f.trim());
+    const rawFieldsWithAliases = selectMatch[1].split(",").map((f) => f.trim());
+    const fields: string[] = [];
+    const aliases: { [key: string]: string } = {};
 
-    const uniqueFields = new Set(rawFields);
-    if (uniqueFields.size !== rawFields.length) {
+    for (const field of rawFieldsWithAliases) {
+      const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
+      if (asMatch) {
+        const fieldName = asMatch[1].trim();
+        const aliasName = asMatch[2];
+        fields.push(fieldName);
+        aliases[fieldName] = aliasName;
+      } else {
+        fields.push(field);
+      }
+    }
+
+    const uniqueFields = new Set(fields);
+    if (uniqueFields.size !== fields.length) {
       setResult("Error: Duplicate field names are not allowed");
       return true;
     }
 
-    if (rawFields.includes("*") && rawFields.length > 1) {
+    if (fields.includes("*") && fields.length > 1) {
       setResult("Error: Cannot mix * with specific fields");
       return true;
     }
 
-    const fields = rawFields.includes("*")
+    const actualFields = fields.includes("*")
       ? powerRangersData.columns.map((col) => col.name)
-      : rawFields;
+      : fields;
 
-    const invalidFields = fields.filter(
+    const invalidFields = actualFields.filter(
       (field) => !powerRangersData.columns.some((col) => col.name === field)
     );
     if (invalidFields.length > 0) {
@@ -258,7 +280,10 @@ export default function SqlEditor() {
     const resultData: Partial<PowerRanger>[] = powerRangersData.data.map(
       (row) =>
         Object.fromEntries(
-          fields.map((field) => [field, row[field as keyof PowerRanger]])
+          actualFields.map((field) => {
+            const alias = aliases[field] || field;
+            return [alias, row[field as keyof PowerRanger]];
+          })
         )
     );
 
@@ -268,19 +293,24 @@ export default function SqlEditor() {
 
   useEffect(() => {
     const completion = (ctx: CompletionContext) => {
-      const word = ctx.matchBefore(/[\w*]*/); // Allow empty match for keywords
+      const word = ctx.matchBefore(/[\w*']*/);
       const docText = ctx.state.doc.toString().toLowerCase();
+      const fullDocText = ctx.state.doc.toString();
       const cursorPos = ctx.pos;
 
-      // Parse selected fields dynamically based on current editor content
-      const selectMatch = docText
+      const selectMatch = fullDocText
         .substring(0, cursorPos)
         .match(/^select\s+(.+?)(?:\s+from|$)/i);
       const alreadySelectedFields = selectMatch
-        ? selectMatch[1].split(",").map((f) => f.trim().toLowerCase())
+        ? selectMatch[1].split(",").map((f) =>
+            f
+              .trim()
+              .replace(/\s+as\s+'.*?'$/i, "")
+              .toLowerCase()
+          )
         : [];
 
-      // 1. Empty editor or partial keyword: suggest SELECT, DESCRIBE, SHOW TABLES
+      // 1. Suggest SQL keywords when editor is empty or typing a keyword
       if (
         /^\s*$/.test(docText) ||
         /^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)
@@ -295,7 +325,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 2. After DESCRIBE, suggest power_rangers table
+      // 2. After DESCRIBE suggest the table
       if (/^describe\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -305,7 +335,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 3. After SELECT, suggest * or remaining columns
+      // 3. Suggest all columns after SELECT
       if (/^select\s*$/i.test(docText)) {
         const options = powerRangersData.columns
           .filter(
@@ -326,9 +356,9 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options };
       }
 
-      // 4. After SELECT with fields or comma, suggest only remaining columns
+      // 4. After comma in SELECT, suggest remaining columns
       if (
-        /^select\s+[\w\s,]+$/i.test(docText) &&
+        /^select\s+[\w\s,'*]+$/i.test(docText) &&
         /,\s*$/.test(docText.substring(0, cursorPos)) &&
         !docText.includes("from")
       ) {
@@ -345,19 +375,75 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options };
       }
 
-      // 5. After SELECT * or valid fields, suggest FROM
+      // 5. If a field is selected and alias is not yet provided, suggest AS
       if (
-        /^select\s+[\w\s*,]+\s*$/i.test(docText) &&
+        /^select\s+[\s\w,'*]+$/i.test(docText) &&
         !docText.includes("from") &&
-        !/,\s*$/.test(docText)
+        !/,\s*$/.test(docText.substring(0, cursorPos))
       ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [{ label: "FROM", type: "keyword", apply: " FROM " }],
-        };
+        const fieldsBeforeCursor = fullDocText
+          .substring(0, cursorPos)
+          .match(/^select\s+(.+?)$/i)?.[1];
+        if (fieldsBeforeCursor) {
+          const lastField = fieldsBeforeCursor.split(",").slice(-1)[0].trim();
+          const lastFieldName = lastField
+            .replace(/\s+as\s+'.*?'$/i, "")
+            .trim()
+            .toLowerCase();
+          const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
+
+          if (
+            !hasAlias &&
+            powerRangersData.columns.some(
+              (col) => col.name.toLowerCase() === lastFieldName
+            )
+          ) {
+            const formattedAlias = formatColumnName(lastFieldName);
+            return {
+              from: word?.from ?? cursorPos,
+              options: [
+                {
+                  label: "AS",
+                  type: "keyword",
+                  apply: ` AS '${formattedAlias}'`,
+                },
+                { label: "FROM", type: "keyword", apply: " FROM " },
+              ],
+            };
+          }
+        }
       }
 
-      // 6. After FROM, suggest power_rangers table
+      // 6. After AS 'alias', suggest next field or FROM
+      if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
+        const endsWithComma = /,\s*$/.test(docText.substring(0, cursorPos));
+        if (endsWithComma) {
+          const options = powerRangersData.columns
+            .filter(
+              (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
+            )
+            .map((col) => ({
+              label: col.name,
+              type: "field",
+              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+              apply: col.name,
+            }));
+          options.push({
+            label: "FROM",
+            type: "keyword",
+            detail: "Proceed to table selection",
+            apply: " FROM ",
+          });
+          return { from: word?.from ?? cursorPos, options };
+        } else {
+          return {
+            from: word?.from ?? cursorPos,
+            options: [{ label: "FROM", type: "keyword", apply: " FROM " }],
+          };
+        }
+      }
+
+      // 7. After FROM, suggest table name
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -371,7 +457,7 @@ export default function SqlEditor() {
         };
       }
 
-      return null;
+      return null; // Default case: no suggestion
     };
 
     const state = EditorState.create({
