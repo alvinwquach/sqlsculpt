@@ -205,11 +205,62 @@ export default function SqlEditor() {
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
   const [tooltip, setTooltip] = useState<string | null>(null);
 
+  const uniqueSeasons = Array.from(
+    new Set(powerRangersData.data.map((row) => row.season))
+  ).sort();
+
   const formatColumnName = (columnName: string): string => {
     return columnName
       .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(" ");
+  };
+
+  const evaluateCondition = (
+    row: PowerRanger,
+    column: string,
+    operator: string,
+    value: string
+  ): boolean => {
+    const columnValue = row[column as keyof PowerRanger];
+    const columnType = powerRangersData.columns.find(
+      (col) => col.name === column
+    )?.type;
+
+    // Handle quoted string values
+    const cleanValue = value.replace(/^'|'$/g, "");
+
+    // Convert values based on column type
+    let typedColumnValue: string | number;
+    let typedValue: string | number;
+
+    if (columnType === "integer") {
+      typedColumnValue = Number(columnValue);
+      typedValue = Number(cleanValue);
+    } else if (columnType === "date") {
+      typedColumnValue = columnValue as string;
+      typedValue = cleanValue;
+    } else {
+      typedColumnValue = columnValue as string;
+      typedValue = cleanValue;
+    }
+
+    switch (operator) {
+      case "=":
+        return typedColumnValue === typedValue;
+      case "!=":
+        return typedColumnValue !== typedValue;
+      case ">":
+        return typedColumnValue > typedValue;
+      case "<":
+        return typedColumnValue < typedValue;
+      case ">=":
+        return typedColumnValue >= typedValue;
+      case "<=":
+        return typedColumnValue <= typedValue;
+      default:
+        return false;
+    }
   };
 
   const runQuery = (view: EditorView): boolean => {
@@ -244,25 +295,26 @@ export default function SqlEditor() {
       return true;
     }
 
-    // Match SELECT or SELECT DISTINCT queries
+    // Match SELECT or SELECT DISTINCT queries with optional WHERE clause
     const selectDistinctMatch = query.match(
-      /^select\s+distinct\s+(.+?)\s+from\s+/i
+      /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
     );
-    const selectMatch = query.match(/^select\s+(?!distinct)(.+?)\s+from\s+/i);
-    const fromMatch = lowerQuery.includes("from power_rangers");
+    const selectMatch = query.match(
+      /^select\s+(?!distinct)(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
+    );
 
-    if ((!selectMatch && !selectDistinctMatch) || !fromMatch) {
+    if (!selectMatch && !selectDistinctMatch) {
       setResult(
-        "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+        "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
       );
       setTooltip(null);
       return true;
     }
 
     const isDistinct = !!selectDistinctMatch;
-    const rawFieldsWithAliases = (selectDistinctMatch ?? selectMatch)![1]
-      .split(",")
-      .map((f) => f.trim());
+    const match = selectDistinctMatch ?? selectMatch;
+    const rawFieldsWithAliases = match![1].split(",").map((f) => f.trim());
+    const whereClause = match![2]?.trim();
     const fields: string[] = [];
     const aliases: { [key: string]: string } = {};
 
@@ -304,7 +356,39 @@ export default function SqlEditor() {
       return false;
     }
 
-    let resultData: Partial<PowerRanger>[] = powerRangersData.data.map((row) =>
+    // Start with full PowerRanger rows
+    let filteredData: PowerRanger[] = powerRangersData.data;
+
+    // Apply WHERE clause if present
+    if (whereClause) {
+      const whereMatch = whereClause.match(
+        /^(\w+)\s*(=|\!=|>|<|>=|<=)\s*('[^']*'|[0-9]+)$/i
+      );
+      if (!whereMatch) {
+        setResult(
+          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = 1 or season = 'Mighty Morphin')"
+        );
+        setTooltip(null);
+        return false;
+      }
+
+      const column = whereMatch[1];
+      const operator = whereMatch[2];
+      const value = whereMatch[3];
+
+      if (!powerRangersData.columns.some((col) => col.name === column)) {
+        setResult(`Error: Invalid column in WHERE clause: ${column}`);
+        setTooltip(null);
+        return false;
+      }
+
+      filteredData = filteredData.filter((row) =>
+        evaluateCondition(row, column, operator, value)
+      );
+    }
+
+    // Map to selected fields
+    let resultData: Partial<PowerRanger>[] = filteredData.map((row) =>
       Object.fromEntries(
         actualFields.map((field) => {
           const alias = aliases[field] || field;
@@ -332,11 +416,13 @@ export default function SqlEditor() {
 
       // Show tooltip for DISTINCT with multiple columns
       if (fields.length > 1) {
-        const groupByFields = fields
-          .map((field) => aliases[field] || field)
-          .join(", ");
+        const groupByFields = fields.map((field) => aliases[field] || field);
         setTooltip(
-          `SELECT DISTINCT ${groupByFields} FROM power_rangers is roughly equivalent to: SELECT ${groupByFields} FROM power_rangers GROUP BY ${groupByFields}`
+          `SELECT DISTINCT ${groupByFields.join(
+            ", "
+          )} FROM power_rangers is roughly equivalent to: SELECT ${groupByFields.join(
+            ", "
+          )} FROM power_rangers GROUP BY ${groupByFields.join(", ")}`
         );
         // Auto-dismiss tooltip after 5 seconds
         setTimeout(() => setTooltip(null), 5000);
@@ -352,6 +438,48 @@ export default function SqlEditor() {
   };
 
   useEffect(() => {
+    const getUniqueValues = (
+      column: string,
+      columnType: string | undefined
+    ): string[] => {
+      if (!columnType) return [];
+
+      if (columnType === "integer") {
+        return Array.from(
+          new Set(
+            powerRangersData.data.map((row) =>
+              String(row[column as keyof PowerRanger])
+            )
+          )
+        );
+      }
+
+      if (columnType === "date" || columnType === "text") {
+        if (column.toLowerCase() === "season") {
+          return uniqueSeasons.map((season) => `'${season}'`);
+        }
+        return Array.from(
+          new Set(
+            powerRangersData.data.map(
+              (row) => `'${row[column as keyof PowerRanger]}'`
+            )
+          )
+        );
+      }
+
+      return [];
+    };
+
+    const getColumnOptions = (excludeFields: string[]) =>
+      powerRangersData.columns
+        .filter((col) => !excludeFields.includes(col.name.toLowerCase()))
+        .map((col) => ({
+          label: col.name,
+          type: "field",
+          detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+          apply: col.name,
+        }));
+
     const completion = (ctx: CompletionContext) => {
       const word = ctx.matchBefore(/[\w*']*/);
       const docText = ctx.state.doc.toString().toLowerCase();
@@ -371,10 +499,7 @@ export default function SqlEditor() {
         : [];
 
       // 1. Suggest SQL keywords when editor is empty or typing a keyword
-      if (
-        /^\s*$/.test(docText) ||
-        /^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)
-      ) {
+      if (/^\s*$|^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
           options: [
@@ -415,46 +540,27 @@ export default function SqlEditor() {
         };
       }
 
-      // 3. Suggest all columns or DISTINCT after SELECT
+      // 3. Suggest all columns, *, or DISTINCT after SELECT
       if (/^select\s*$/i.test(docText)) {
-        const options = powerRangersData.columns
-          .filter(
-            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
-          )
-          .map((col) => ({
-            label: col.name,
-            type: "field",
-            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            apply: col.name,
-          }));
-        options.unshift({
-          label: "*",
-          type: "field",
-          detail: "all columns",
-          apply: "*",
-        });
-        options.unshift({
-          label: "DISTINCT",
-          type: "keyword",
-          apply: "DISTINCT ",
-          detail: "Select unique values",
-        });
+        const options = getColumnOptions(alreadySelectedFields);
+        options.unshift(
+          { label: "*", type: "field", detail: "all columns", apply: "*" },
+          {
+            label: "DISTINCT",
+            type: "keyword",
+            apply: "DISTINCT ",
+            detail: "Select unique values",
+          }
+        );
         return { from: word?.from ?? cursorPos, options };
       }
 
       // 4. After SELECT DISTINCT, suggest columns
       if (/^select\s+distinct\s*$/i.test(docText)) {
-        const options = powerRangersData.columns
-          .filter(
-            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
-          )
-          .map((col) => ({
-            label: col.name,
-            type: "field",
-            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            apply: col.name,
-          }));
-        return { from: word?.from ?? cursorPos, options };
+        return {
+          from: word?.from ?? cursorPos,
+          options: getColumnOptions(alreadySelectedFields),
+        };
       }
 
       // 5. After comma in SELECT, suggest remaining columns
@@ -463,28 +569,21 @@ export default function SqlEditor() {
         /,\s*$/.test(docText.substring(0, cursorPos)) &&
         !docText.includes("from")
       ) {
-        const options = powerRangersData.columns
-          .filter(
-            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
-          )
-          .map((col) => ({
-            label: col.name,
-            type: "field",
-            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            apply: col.name,
-          }));
-        return { from: word?.from ?? cursorPos, options };
+        return {
+          from: word?.from ?? cursorPos,
+          options: getColumnOptions(alreadySelectedFields),
+        };
       }
 
-      // 6. If a field is selected and alias is not yet provided, suggest AS
+      // 6. If a field is selected and alias is not yet provided, suggest AS or FROM
       if (
         /^select\s+(?:distinct\s+)?[\s\w,'*]+$/i.test(docText) &&
         !docText.includes("from") &&
         !/,\s*$/.test(docText.substring(0, cursorPos))
       ) {
-        const fieldsBeforeCursor = fullDocText
-          .substring(0, cursorPos)
-          .match(/^select\s+(?:distinct\s+)?(.+?)$/i)?.[1];
+        const fieldsBeforeCursor = fullDocText.match(
+          /^select\s+(?:distinct\s+)?(.+?)$/i
+        )?.[1];
         if (fieldsBeforeCursor) {
           const lastField = fieldsBeforeCursor.split(",").slice(-1)[0].trim();
           const lastFieldName = lastField
@@ -495,28 +594,32 @@ export default function SqlEditor() {
 
           if (
             !hasAlias &&
-            powerRangersData.columns.some(
-              (col) => col.name.toLowerCase() === lastFieldName
-            )
+            (lastFieldName === "*" ||
+              powerRangersData.columns.some(
+                (col) => col.name.toLowerCase() === lastFieldName
+              ))
           ) {
-            const formattedAlias = formatColumnName(lastFieldName);
-            return {
-              from: word?.from ?? cursorPos,
-              options: [
-                {
-                  label: "AS",
-                  type: "keyword",
-                  apply: ` AS '${formattedAlias}'`,
-                  detail: "Alias the column",
-                },
-                {
-                  label: "FROM",
-                  type: "keyword",
-                  apply: " FROM ",
-                  detail: "Specify table",
-                },
-              ],
-            };
+            const formattedAlias =
+              lastFieldName !== "*"
+                ? formatColumnName(lastFieldName)
+                : undefined;
+            const options = [
+              {
+                label: "FROM",
+                type: "keyword",
+                apply: " FROM ",
+                detail: "Specify table",
+              },
+            ];
+            if (formattedAlias) {
+              options.unshift({
+                label: "AS",
+                type: "keyword",
+                apply: ` AS '${formattedAlias}'`,
+                detail: "Alias the column",
+              });
+            }
+            return { from: word?.from ?? cursorPos, options };
           }
         }
       }
@@ -524,37 +627,25 @@ export default function SqlEditor() {
       // 7. After AS 'alias', suggest next field or FROM
       if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
         const endsWithComma = /,\s*$/.test(docText.substring(0, cursorPos));
-        if (endsWithComma) {
-          const options = powerRangersData.columns
-            .filter(
-              (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
-            )
-            .map((col) => ({
-              label: col.name,
-              type: "field",
-              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-              apply: col.name,
-            }));
-          options.push({
-            label: "FROM",
-            type: "keyword",
-            detail: "Proceed to table selection",
-            apply: " FROM ",
-          });
-          return { from: word?.from ?? cursorPos, options };
-        } else {
-          return {
-            from: word?.from ?? cursorPos,
-            options: [
+        const options = endsWithComma
+          ? [
+              ...getColumnOptions(alreadySelectedFields),
+              {
+                label: "FROM",
+                type: "keyword",
+                apply: " FROM ",
+                detail: "Proceed to table selection",
+              },
+            ]
+          : [
               {
                 label: "FROM",
                 type: "keyword",
                 apply: " FROM ",
                 detail: "Specify table",
               },
-            ],
-          };
-        }
+            ];
+        return { from: word?.from ?? cursorPos, options };
       }
 
       // 8. After FROM, suggest table name
@@ -563,13 +654,99 @@ export default function SqlEditor() {
           from: word?.from ?? cursorPos,
           options: [
             {
-              label: powerRangersData.tableName,
+              label: "power_rangers",
               type: "table",
-              apply: powerRangersData.tableName,
+              apply: "power_rangers ",
               detail: "Table name",
             },
           ],
         };
+      }
+
+      // 9. After FROM power_rangers, suggest WHERE
+      if (/from\s+power_rangers\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "WHERE",
+              type: "keyword",
+              apply: "WHERE ",
+              detail: "Filter rows",
+            },
+          ],
+        };
+      }
+
+      // 10. After WHERE, suggest columns
+      if (/from\s+power_rangers\s+where\s*$/i.test(docText)) {
+        return { from: word?.from ?? cursorPos, options: getColumnOptions([]) };
+      }
+
+      // 11. After WHERE column, suggest operators
+      if (
+        /from\s+power_rangers\s+where\s+\w+\s*$/i.test(docText) &&
+        powerRangersData.columns.some((col) =>
+          new RegExp(`\\b${col.name.toLowerCase()}\\s*$`, "i").test(docText)
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
+            {
+              label: "!=",
+              type: "operator",
+              apply: "!= ",
+              detail: "Not equal to",
+            },
+            {
+              label: ">",
+              type: "operator",
+              apply: "> ",
+              detail: "Greater than",
+            },
+            { label: "<", type: "operator", apply: "< ", detail: "Less than" },
+            {
+              label: ">=",
+              type: "operator",
+              apply: ">= ",
+              detail: "Greater than or equal to",
+            },
+            {
+              label: "<=",
+              type: "operator",
+              apply: "<= ",
+              detail: "Less than or equal to",
+            },
+          ],
+        };
+      }
+
+      // 12. After WHERE column operator or between quotes, suggest all available values
+      const valuePattern =
+        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=)\s*('[^']*')?\s*$/i;
+      const operatorPattern =
+        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=)\s*$/i;
+      if (valuePattern.test(docText) || operatorPattern.test(docText)) {
+        const match =
+          docText.match(valuePattern) || docText.match(operatorPattern);
+        if (match) {
+          const column = match[1];
+          const columnType = powerRangersData.columns.find(
+            (col) => col.name.toLowerCase() === column.toLowerCase()
+          )?.type;
+          const sampleValues = getUniqueValues(column, columnType);
+          return {
+            from: word?.from ?? cursorPos,
+            options: sampleValues.map((value) => ({
+              label: value,
+              type: "value",
+              apply: value,
+              detail: "Value",
+            })),
+          };
+        }
       }
 
       return null; // Default case: no suggestion
@@ -592,7 +769,7 @@ export default function SqlEditor() {
           { key: "Ctrl-Space", run: startCompletion },
           ...defaultKeymap,
         ]),
-        autocompletion({ override: [completion], activateOnTyping: true }),
+        autocompletion({ override: [completion], activateOnTyping: false }),
       ],
     });
 
