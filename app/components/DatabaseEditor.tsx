@@ -160,7 +160,7 @@ function ViewToggle({ onViewModeChange }: ViewToggleProps) {
 
   const handleModeChange = (mode: "json" | "table") => {
     setViewMode(mode);
-    onViewModeChange?.(mode);
+    if (onViewModeChange) onViewModeChange(mode);
   };
 
   return (
@@ -187,10 +187,23 @@ function ViewToggle({ onViewModeChange }: ViewToggleProps) {
   );
 }
 
+interface TooltipProps {
+  message: string;
+}
+
+function Tooltip({ message }: TooltipProps) {
+  return (
+    <div className="absolute top-0 left-1/2 transform -translate-x-1/2 mt-2 bg-gray-700 text-white text-xs rounded px-3 py-1.5 shadow-lg animate-in fade-in slide-in-from-top-2">
+      {message}
+    </div>
+  );
+}
+
 export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
+  const [tooltip, setTooltip] = useState<string | null>(null);
 
   const formatColumnName = (columnName: string): string => {
     return columnName
@@ -204,6 +217,7 @@ export default function SqlEditor() {
 
     if (!query) {
       setResult("No query entered");
+      setTooltip(null);
       return true;
     }
 
@@ -213,6 +227,7 @@ export default function SqlEditor() {
         { table_name: powerRangersData.tableName },
       ];
       setResult(JSON.stringify(showTablesResult, null, 2));
+      setTooltip(null);
       return true;
     }
 
@@ -225,20 +240,29 @@ export default function SqlEditor() {
         })
       );
       setResult(JSON.stringify(describeResult, null, 2));
+      setTooltip(null);
       return true;
     }
 
-    const selectMatch = query.match(/^select\s+(.+?)\s+from\s+/i);
+    // Match SELECT or SELECT DISTINCT queries
+    const selectDistinctMatch = query.match(
+      /^select\s+distinct\s+(.+?)\s+from\s+/i
+    );
+    const selectMatch = query.match(/^select\s+(?!distinct)(.+?)\s+from\s+/i);
     const fromMatch = lowerQuery.includes("from power_rangers");
 
-    if (!selectMatch || !fromMatch) {
+    if ((!selectMatch && !selectDistinctMatch) || !fromMatch) {
       setResult(
-        "Error: Query must be 'SELECT <fields> FROM power_rangers', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+        "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
       );
+      setTooltip(null);
       return true;
     }
 
-    const rawFieldsWithAliases = selectMatch[1].split(",").map((f) => f.trim());
+    const isDistinct = !!selectDistinctMatch;
+    const rawFieldsWithAliases = (selectDistinctMatch ?? selectMatch)![1]
+      .split(",")
+      .map((f) => f.trim());
     const fields: string[] = [];
     const aliases: { [key: string]: string } = {};
 
@@ -257,12 +281,14 @@ export default function SqlEditor() {
     const uniqueFields = new Set(fields);
     if (uniqueFields.size !== fields.length) {
       setResult("Error: Duplicate field names are not allowed");
-      return true;
+      setTooltip(null);
+      return false;
     }
 
     if (fields.includes("*") && fields.length > 1) {
       setResult("Error: Cannot mix * with specific fields");
-      return true;
+      setTooltip(null);
+      return false;
     }
 
     const actualFields = fields.includes("*")
@@ -274,18 +300,52 @@ export default function SqlEditor() {
     );
     if (invalidFields.length > 0) {
       setResult(`Error: Invalid field(s): ${invalidFields.join(", ")}`);
-      return true;
+      setTooltip(null);
+      return false;
     }
 
-    const resultData: Partial<PowerRanger>[] = powerRangersData.data.map(
-      (row) =>
-        Object.fromEntries(
-          actualFields.map((field) => {
-            const alias = aliases[field] || field;
-            return [alias, row[field as keyof PowerRanger]];
-          })
-        )
+    let resultData: Partial<PowerRanger>[] = powerRangersData.data.map((row) =>
+      Object.fromEntries(
+        actualFields.map((field) => {
+          const alias = aliases[field] || field;
+          return [alias, row[field as keyof PowerRanger]];
+        })
+      )
     );
+
+    // Apply DISTINCT if specified
+    if (isDistinct) {
+      const distinctRows = new Set<string>();
+      resultData = resultData.filter((row) => {
+        const key = actualFields
+          .map((field) => {
+            const alias = aliases[field] || field;
+            return `${alias}:${row[alias as keyof PowerRanger]}`;
+          })
+          .join("|");
+        if (distinctRows.has(key)) {
+          return false;
+        }
+        distinctRows.add(key);
+        return true;
+      });
+
+      // Show tooltip for DISTINCT with multiple columns
+      if (fields.length > 1) {
+        const groupByFields = fields
+          .map((field) => aliases[field] || field)
+          .join(", ");
+        setTooltip(
+          `SELECT DISTINCT ${groupByFields} FROM power_rangers is roughly equivalent to: SELECT ${groupByFields} FROM power_rangers GROUP BY ${groupByFields}`
+        );
+        // Auto-dismiss tooltip after 5 seconds
+        setTimeout(() => setTooltip(null), 5000);
+      } else {
+        setTooltip(null);
+      }
+    } else {
+      setTooltip(null);
+    }
 
     setResult(JSON.stringify(resultData, null, 2));
     return true;
@@ -300,7 +360,7 @@ export default function SqlEditor() {
 
       const selectMatch = fullDocText
         .substring(0, cursorPos)
-        .match(/^select\s+(.+?)(?:\s+from|$)/i);
+        .match(/^select\s+(?:distinct\s+)?(.+?)(?:\s+from|$)/i);
       const alreadySelectedFields = selectMatch
         ? selectMatch[1].split(",").map((f) =>
             f
@@ -318,9 +378,24 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
-            { label: "SELECT", type: "keyword", apply: "SELECT " },
-            { label: "DESCRIBE", type: "keyword", apply: "DESCRIBE " },
-            { label: "SHOW TABLES", type: "keyword", apply: "SHOW TABLES" },
+            {
+              label: "SELECT",
+              type: "keyword",
+              apply: "SELECT ",
+              detail: "Select data from a table",
+            },
+            {
+              label: "DESCRIBE",
+              type: "keyword",
+              apply: "DESCRIBE ",
+              detail: "Describe table structure",
+            },
+            {
+              label: "SHOW TABLES",
+              type: "keyword",
+              apply: "SHOW TABLES",
+              detail: "List all tables",
+            },
           ],
         };
       }
@@ -330,12 +405,17 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
-            { label: "power_rangers", type: "table", apply: "power_rangers" },
+            {
+              label: "power_rangers",
+              type: "table",
+              apply: "power_rangers",
+              detail: "Table name",
+            },
           ],
         };
       }
 
-      // 3. Suggest all columns after SELECT
+      // 3. Suggest all columns or DISTINCT after SELECT
       if (/^select\s*$/i.test(docText)) {
         const options = powerRangersData.columns
           .filter(
@@ -353,12 +433,33 @@ export default function SqlEditor() {
           detail: "all columns",
           apply: "*",
         });
+        options.unshift({
+          label: "DISTINCT",
+          type: "keyword",
+          apply: "DISTINCT ",
+          detail: "Select unique values",
+        });
         return { from: word?.from ?? cursorPos, options };
       }
 
-      // 4. After comma in SELECT, suggest remaining columns
+      // 4. After SELECT DISTINCT, suggest columns
+      if (/^select\s+distinct\s*$/i.test(docText)) {
+        const options = powerRangersData.columns
+          .filter(
+            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
+          )
+          .map((col) => ({
+            label: col.name,
+            type: "field",
+            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+            apply: col.name,
+          }));
+        return { from: word?.from ?? cursorPos, options };
+      }
+
+      // 5. After comma in SELECT, suggest remaining columns
       if (
-        /^select\s+[\w\s,'*]+$/i.test(docText) &&
+        /^select\s+(?:distinct\s+)?[\w\s,'*]+$/i.test(docText) &&
         /,\s*$/.test(docText.substring(0, cursorPos)) &&
         !docText.includes("from")
       ) {
@@ -375,15 +476,15 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options };
       }
 
-      // 5. If a field is selected and alias is not yet provided, suggest AS
+      // 6. If a field is selected and alias is not yet provided, suggest AS
       if (
-        /^select\s+[\s\w,'*]+$/i.test(docText) &&
+        /^select\s+(?:distinct\s+)?[\s\w,'*]+$/i.test(docText) &&
         !docText.includes("from") &&
         !/,\s*$/.test(docText.substring(0, cursorPos))
       ) {
         const fieldsBeforeCursor = fullDocText
           .substring(0, cursorPos)
-          .match(/^select\s+(.+?)$/i)?.[1];
+          .match(/^select\s+(?:distinct\s+)?(.+?)$/i)?.[1];
         if (fieldsBeforeCursor) {
           const lastField = fieldsBeforeCursor.split(",").slice(-1)[0].trim();
           const lastFieldName = lastField
@@ -406,15 +507,21 @@ export default function SqlEditor() {
                   label: "AS",
                   type: "keyword",
                   apply: ` AS '${formattedAlias}'`,
+                  detail: "Alias the column",
                 },
-                { label: "FROM", type: "keyword", apply: " FROM " },
+                {
+                  label: "FROM",
+                  type: "keyword",
+                  apply: " FROM ",
+                  detail: "Specify table",
+                },
               ],
             };
           }
         }
       }
 
-      // 6. After AS 'alias', suggest next field or FROM
+      // 7. After AS 'alias', suggest next field or FROM
       if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
         const endsWithComma = /,\s*$/.test(docText.substring(0, cursorPos));
         if (endsWithComma) {
@@ -438,12 +545,19 @@ export default function SqlEditor() {
         } else {
           return {
             from: word?.from ?? cursorPos,
-            options: [{ label: "FROM", type: "keyword", apply: " FROM " }],
+            options: [
+              {
+                label: "FROM",
+                type: "keyword",
+                apply: " FROM ",
+                detail: "Specify table",
+              },
+            ],
           };
         }
       }
 
-      // 7. After FROM, suggest table name
+      // 8. After FROM, suggest table name
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -452,6 +566,7 @@ export default function SqlEditor() {
               label: powerRangersData.tableName,
               type: "table",
               apply: powerRangersData.tableName,
+              detail: "Table name",
             },
           ],
         };
@@ -587,19 +702,18 @@ export default function SqlEditor() {
           <div className="relative group inline-block">
             <button
               onClick={() => editorRef.current && runQuery(editorRef.current)}
-              className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block
-              bg-gray-700 text-white text-xs rounded px-3 py-1.5 whitespace-nowrap shadow-lg
-              animate-in fade-in slide-in-from-bottom-2"
+              className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-700 text-white text-xs rounded px-3 py-1.5 whitespace-nowrap shadow-lg animate-in fade-in slide-in-from-bottom-2"
             >
               {navigator.platform.includes("Mac") ? "⌘+Enter" : "Ctrl+Enter"}
             </button>
           </div>
         </div>
       </div>
-      <div className="w-full md:w-1/2 bg-[#1e293b] rounded-xl p-4 overflow-auto text-sm border border-slate-700">
+      <div className="w-full md:w-1/2 bg-[#1e293b] rounded-xl p-4 overflow-auto text-sm border border-slate-700 relative">
         <div className="flex justify-end mb-4">
           <ViewToggle onViewModeChange={setViewMode} />
         </div>
+        {tooltip && <Tooltip message={tooltip} />}
         {renderResult()}
       </div>
     </div>
