@@ -216,6 +216,19 @@ export default function SqlEditor() {
       .join(" ");
   };
 
+  const evaluateLikeCondition = (
+    columnValue: string | number,
+    pattern: string
+  ): boolean => {
+    const cleanPattern = pattern.replace(/^'|'$/g, ""); // Remove surrounding quotes
+    const regexPattern = cleanPattern
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // Escape special regex characters
+      .replace(/%/g, ".*") // Convert % to match any sequence
+      .replace(/_/g, "."); // Convert _ to match single character
+    const regex = new RegExp(`^${regexPattern}$`, "i"); // Case-insensitive match
+    return regex.test(String(columnValue));
+  };
+
   const evaluateCondition = (
     row: PowerRanger,
     column: string,
@@ -227,10 +240,11 @@ export default function SqlEditor() {
       (col) => col.name === column
     )?.type;
 
-    // Handle quoted string values
-    const cleanValue = value.replace(/^'|'$/g, "");
+    if (operator.toUpperCase() === "LIKE") {
+      return evaluateLikeCondition(columnValue, value);
+    }
 
-    // Convert values based on column type
+    const cleanValue = value.replace(/^'|'$/g, "");
     let typedColumnValue: string | number;
     let typedValue: string | number;
 
@@ -245,7 +259,7 @@ export default function SqlEditor() {
       typedValue = cleanValue;
     }
 
-    switch (operator) {
+    switch (operator.toUpperCase()) {
       case "=":
         return typedColumnValue === typedValue;
       case "!=":
@@ -316,7 +330,7 @@ export default function SqlEditor() {
     const rawFieldsWithAliases = match![1].split(",").map((f) => f.trim());
     const whereClause = match![2]?.trim();
     const fields: string[] = [];
-    const aliases: { [key: string]: string } = {};
+    const aliases: { [key in keyof PowerRanger]?: string } = {};
 
     for (const field of rawFieldsWithAliases) {
       const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
@@ -324,7 +338,7 @@ export default function SqlEditor() {
         const fieldName = asMatch[1].trim();
         const aliasName = asMatch[2];
         fields.push(fieldName);
-        aliases[fieldName] = aliasName;
+        aliases[fieldName as keyof PowerRanger] = aliasName;
       } else {
         fields.push(field);
       }
@@ -356,17 +370,15 @@ export default function SqlEditor() {
       return false;
     }
 
-    // Start with full PowerRanger rows
     let filteredData: PowerRanger[] = powerRangersData.data;
 
-    // Apply WHERE clause if present
     if (whereClause) {
       const whereMatch = whereClause.match(
-        /^(\w+)\s*(=|\!=|>|<|>=|<=)\s*('[^']*'|[0-9]+)$/i
+        /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*')\s*$/i
       );
       if (!whereMatch) {
         setResult(
-          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = 1 or season = 'Mighty Morphin')"
+          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = '1', weapon LIKE 'Pow%', season = 'Mighty Morphin')"
         );
         setTooltip(null);
         return false;
@@ -376,7 +388,11 @@ export default function SqlEditor() {
       const operator = whereMatch[2];
       const value = whereMatch[3];
 
-      if (!powerRangersData.columns.some((col) => col.name === column)) {
+      if (
+        !powerRangersData.columns.some(
+          (col) => col.name.toLowerCase() === column.toLowerCase()
+        )
+      ) {
         setResult(`Error: Invalid column in WHERE clause: ${column}`);
         setTooltip(null);
         return false;
@@ -387,23 +403,21 @@ export default function SqlEditor() {
       );
     }
 
-    // Map to selected fields
     let resultData: Partial<PowerRanger>[] = filteredData.map((row) =>
       Object.fromEntries(
         actualFields.map((field) => {
-          const alias = aliases[field] || field;
+          const alias = aliases[field as keyof PowerRanger] || field;
           return [alias, row[field as keyof PowerRanger]];
         })
       )
     );
 
-    // Apply DISTINCT if specified
     if (isDistinct) {
       const distinctRows = new Set<string>();
       resultData = resultData.filter((row) => {
         const key = actualFields
           .map((field) => {
-            const alias = aliases[field] || field;
+            const alias = aliases[field as keyof PowerRanger] || field;
             return `${alias}:${row[alias as keyof PowerRanger]}`;
           })
           .join("|");
@@ -414,9 +428,10 @@ export default function SqlEditor() {
         return true;
       });
 
-      // Show tooltip for DISTINCT with multiple columns
       if (fields.length > 1) {
-        const groupByFields = fields.map((field) => aliases[field] || field);
+        const groupByFields = fields.map(
+          (field) => aliases[field as keyof PowerRanger] || field
+        );
         setTooltip(
           `SELECT DISTINCT ${groupByFields.join(
             ", "
@@ -424,7 +439,6 @@ export default function SqlEditor() {
             ", "
           )} FROM power_rangers GROUP BY ${groupByFields.join(", ")}`
         );
-        // Auto-dismiss tooltip after 5 seconds
         setTimeout(() => setTooltip(null), 5000);
       } else {
         setTooltip(null);
@@ -447,8 +461,8 @@ export default function SqlEditor() {
       if (columnType === "integer") {
         return Array.from(
           new Set(
-            powerRangersData.data.map((row) =>
-              String(row[column as keyof PowerRanger])
+            powerRangersData.data.map(
+              (row) => `'${row[column as keyof PowerRanger]}'`
             )
           )
         );
@@ -468,6 +482,102 @@ export default function SqlEditor() {
       }
 
       return [];
+    };
+
+    const getLikePatternSuggestions = (
+      column: string,
+      columnType: string | undefined
+    ): string[] => {
+      if (columnType !== "text") return [];
+
+      const values = Array.from(
+        new Set(
+          powerRangersData.data.map((row) =>
+            String(row[column as keyof PowerRanger])
+          )
+        )
+      );
+
+      const patterns: string[] = [];
+
+      values.forEach((value) => {
+        const len = value.length;
+
+        // 1. Exact match
+        patterns.push(`'${value}'`);
+
+        // 2. Prefix patterns (e.g., 'B%')
+        for (let i = 1; i <= Math.min(len, 4); i++) {
+          const prefixPattern = `'${value.slice(0, i)}%'`;
+          if (!patterns.includes(prefixPattern)) {
+            patterns.push(prefixPattern);
+          }
+        }
+
+        // 3. Suffix patterns (e.g., '%ue')
+        for (let i = 1; i <= Math.min(len, 4); i++) {
+          const suffixPattern = `'%${value.slice(-i)}'`;
+          if (!patterns.includes(suffixPattern)) {
+            patterns.push(suffixPattern);
+          }
+        }
+
+        // 4. Contains patterns (e.g., '%lu%')
+        for (let i = 1; i < len; i++) {
+          for (let j = i + 1; j <= len; j++) {
+            const substring = value.slice(i, j);
+            if (substring.length >= 1 && substring.length <= 4) {
+              const containsPattern = `'%${substring}%'`;
+              if (!patterns.includes(containsPattern)) {
+                patterns.push(containsPattern);
+              }
+            }
+          }
+        }
+
+        // 5. Single character replacement with underscore (e.g., 'B_ue')
+        if (len >= 2) {
+          for (let i = 0; i < len; i++) {
+            const pattern = `'${value.slice(0, i)}${value.slice(i + 1)}'`;
+            if (!patterns.includes(pattern)) {
+              patterns.push(pattern);
+            }
+            const underscorePattern = `'${value.slice(0, i)}${
+              value[i]
+            }_${value.slice(i + 1)}'`;
+            if (!patterns.includes(underscorePattern)) {
+              patterns.push(underscorePattern);
+            }
+          }
+        }
+
+        // 6. Patterns with underscores for each character (e.g., 'B___')
+        if (len > 1) {
+          const underscorePattern = `'${Array(len).fill("_").join("")}'`;
+          if (!patterns.includes(underscorePattern)) {
+            patterns.push(underscorePattern);
+          }
+        }
+
+        // 7. Partial prefix with underscore (e.g., 'Bl_e')
+        if (len > 2) {
+          for (let i = 2; i < len; i++) {
+            const partialPattern = `'${value.slice(0, i - 1)}${
+              value[i - 1]
+            }_${value.slice(i)}'`;
+            if (!patterns.includes(partialPattern)) {
+              patterns.push(partialPattern);
+            }
+          }
+        }
+      });
+
+      // 8. Generic patterns based on column
+      patterns.push(`'%${column.slice(0, 1).toUpperCase()}%'`);
+      patterns.push(`'${column.slice(0, 1).toUpperCase()}%'`);
+      patterns.push(`'%${column.slice(0, 1).toLowerCase()}%'`);
+
+      return Array.from(new Set(patterns)).sort();
     };
 
     const getColumnOptions = (excludeFields: string[]) =>
@@ -648,7 +758,6 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options };
       }
 
-      // 8. After FROM, suggest table name
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -719,23 +828,43 @@ export default function SqlEditor() {
               apply: "<= ",
               detail: "Less than or equal to",
             },
+            {
+              label: "LIKE",
+              type: "operator",
+              apply: "LIKE ",
+              detail: "Pattern matching",
+            },
           ],
         };
       }
 
-      // 12. After WHERE column operator or between quotes, suggest all available values
       const valuePattern =
-        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=)\s*('[^']*')?\s*$/i;
+        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*')?\s*$/i;
       const operatorPattern =
-        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=)\s*$/i;
+        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*$/i;
       if (valuePattern.test(docText) || operatorPattern.test(docText)) {
         const match =
           docText.match(valuePattern) || docText.match(operatorPattern);
         if (match) {
           const column = match[1];
+          const operator = match[2];
           const columnType = powerRangersData.columns.find(
             (col) => col.name.toLowerCase() === column.toLowerCase()
           )?.type;
+
+          if (operator.toUpperCase() === "LIKE") {
+            const likePatterns = getLikePatternSuggestions(column, columnType);
+            return {
+              from: word?.from ?? cursorPos,
+              options: likePatterns.map((pattern) => ({
+                label: pattern,
+                type: "value",
+                apply: pattern,
+                detail: "LIKE pattern",
+              })),
+            };
+          }
+
           const sampleValues = getUniqueValues(column, columnType);
           return {
             from: word?.from ?? cursorPos,
@@ -749,7 +878,7 @@ export default function SqlEditor() {
         }
       }
 
-      return null; // Default case: no suggestion
+      return null;
     };
 
     const state = EditorState.create({
@@ -784,7 +913,7 @@ export default function SqlEditor() {
     };
   }, []);
 
-  const isJson = (str: string) => {
+  const isJson = (str: string): boolean => {
     try {
       JSON.parse(str);
       return true;
@@ -876,13 +1005,10 @@ export default function SqlEditor() {
           >
             ▶ Run Query
           </button>
-          <div className="relative group inline-block">
-            <button
-              onClick={() => editorRef.current && runQuery(editorRef.current)}
-              className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-700 text-white text-xs rounded px-3 py-1.5 whitespace-nowrap shadow-lg animate-in fade-in slide-in-from-bottom-2"
-            >
+          <div className="relative">
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-700 text-white text-xs rounded px-3 py-1.5 whitespace-nowrap shadow-lg animate-in fade-in slide-in-from-bottom-2">
               {navigator.platform.includes("Mac") ? "⌘+Enter" : "Ctrl+Enter"}
-            </button>
+            </div>
           </div>
         </div>
       </div>
