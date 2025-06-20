@@ -308,6 +308,7 @@ export default function SqlEditor() {
       setTooltip(null);
       return true;
     }
+
     // Match SELECT or SELECT DISTINCT queries with optional WHERE clause
     const selectDistinctMatch = query.match(
       /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
@@ -507,7 +508,7 @@ export default function SqlEditor() {
 
         // 2. Prefix patterns (e.g., 'B%')
         for (let i = 1; i <= Math.min(len, 4); i++) {
-          let prefixPattern = `'${value.slice(0, i)}%'`;
+          const prefixPattern = `'${value.slice(0, i)}%'`;
           if (!patterns.includes(prefixPattern)) {
             patterns.push(prefixPattern);
           }
@@ -515,7 +516,7 @@ export default function SqlEditor() {
 
         // 3. Suffix patterns (e.g., '%ue')
         for (let i = 1; i <= Math.min(len, 4); i++) {
-          let suffixPattern = `'%${value.slice(-i)}'`;
+          const suffixPattern = `'%${value.slice(-i)}'`;
           if (!patterns.includes(suffixPattern)) {
             patterns.push(suffixPattern);
           }
@@ -524,9 +525,9 @@ export default function SqlEditor() {
         // 4. Contains patterns (e.g., '%lu%')
         for (let i = 1; i < len; i++) {
           for (let j = i + 1; j <= len; j++) {
-            let substring = value.slice(i, j);
+            const substring = value.slice(i, j);
             if (substring.length >= 1 && substring.length <= 4) {
-              let containsPattern = `'%${substring}%'`;
+              const containsPattern = `'%${substring}%'`;
               if (!patterns.includes(containsPattern)) {
                 patterns.push(containsPattern);
               }
@@ -537,11 +538,11 @@ export default function SqlEditor() {
         // 5. Single character replacement with underscore (e.g., 'B_ue')
         if (len >= 2) {
           for (let i = 0; i < len; i++) {
-            let pattern = `'${value.slice(0, i)}${value.slice(i + 1)}'`;
+            const pattern = `'${value.slice(0, i)}${value.slice(i + 1)}'`;
             if (!patterns.includes(pattern)) {
               patterns.push(pattern);
             }
-            let underscorePattern = `'${value.slice(0, i)}${
+            const underscorePattern = `'${value.slice(0, i)}${
               value[i]
             }_${value.slice(i + 1)}'`;
             if (!patterns.includes(underscorePattern)) {
@@ -552,7 +553,7 @@ export default function SqlEditor() {
 
         // 6. Patterns with underscores for each character (e.g., 'B___')
         if (len > 1) {
-          let underscorePattern = `'${Array(len).fill("_").join("")}'`;
+          const underscorePattern = `'${Array(len).fill("_").join("")}'`;
           if (!patterns.includes(underscorePattern)) {
             patterns.push(underscorePattern);
           }
@@ -561,7 +562,7 @@ export default function SqlEditor() {
         // 7. Partial prefix with underscore (e.g., 'Bl_e')
         if (len > 2) {
           for (let i = 2; i < len; i++) {
-            let partialPattern = `'${value.slice(0, i - 1)}${
+            const partialPattern = `'${value.slice(0, i - 1)}${
               value[i - 1]
             }_${value.slice(i)}'`;
             if (!patterns.includes(partialPattern)) {
@@ -633,6 +634,7 @@ export default function SqlEditor() {
           ],
         };
       }
+
       // 2. After DESCRIBE suggest the table
       if (/^describe\s*$/i.test(docText)) {
         return {
@@ -670,6 +672,7 @@ export default function SqlEditor() {
           options: getColumnOptions(alreadySelectedFields),
         };
       }
+
       // 5. After comma in SELECT, suggest remaining columns
       if (
         /^select\s+(?:distinct\s+)?[\w\s,'*]+$/i.test(docText) &&
@@ -730,6 +733,7 @@ export default function SqlEditor() {
           }
         }
       }
+
       // 7. After AS 'alias', suggest next field or FROM
       if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
         const endsWithComma = /,\s*$/.test(docText.substring(0, cursorPos));
@@ -767,6 +771,7 @@ export default function SqlEditor() {
           ],
         };
       }
+
       // 9. After FROM power_rangers, suggest WHERE
       if (/from\s+power_rangers\s*$/i.test(docText)) {
         return {
@@ -833,7 +838,6 @@ export default function SqlEditor() {
         };
       }
 
-      // 12. After WHERE column operator or between quotes, suggest all available values
       const valuePattern =
         /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*')?\s*$/i;
       const operatorPattern =
