@@ -372,13 +372,28 @@ export default function SqlEditor() {
 
     let filteredData: PowerRanger[] = powerRangersData.data;
 
+    const evaluateNullCondition = (
+      row: PowerRanger,
+      column: string,
+      operator: string
+    ): boolean => {
+      const columnValue = row[column as keyof PowerRanger];
+      if (operator.toUpperCase() === "IS NULL") {
+        return columnValue === null || columnValue === undefined;
+      }
+      if (operator.toUpperCase() === "IS NOT NULL") {
+        return columnValue !== null && columnValue !== undefined;
+      }
+      return false;
+    };
+
     if (whereClause) {
       const whereMatch = whereClause.match(
-        /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*')\s*$/i
+        /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)(?:\s*('[^']*'))?\s*$/i
       );
       if (!whereMatch) {
         setResult(
-          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = '1', weapon LIKE 'Pow%', season = 'Mighty Morphin')"
+          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = '1', weapon LIKE 'Pow%', season IS NULL)"
         );
         setTooltip(null);
         return false;
@@ -398,9 +413,20 @@ export default function SqlEditor() {
         return false;
       }
 
-      filteredData = filteredData.filter((row) =>
-        evaluateCondition(row, column, operator, value)
-      );
+      filteredData = filteredData.filter((row) => {
+        if (
+          operator.toUpperCase() === "IS NULL" ||
+          operator.toUpperCase() === "IS NOT NULL"
+        ) {
+          return evaluateNullCondition(row, column, operator);
+        }
+        if (!value) {
+          setResult(`Error: Missing value for operator ${operator}`);
+          setTooltip(null);
+          return false;
+        }
+        return evaluateCondition(row, column, operator, value);
+      });
     }
 
     let resultData: Partial<PowerRanger>[] = filteredData.map((row) =>
@@ -833,6 +859,18 @@ export default function SqlEditor() {
               type: "operator",
               apply: "LIKE ",
               detail: "Pattern matching",
+            },
+            {
+              label: "IS NULL",
+              type: "operator",
+              apply: "IS NULL ",
+              detail: "Check for null values",
+            },
+            {
+              label: "IS NOT NULL",
+              type: "operator",
+              apply: "IS NOT NULL ",
+              detail: "Check for non-null values",
             },
           ],
         };
