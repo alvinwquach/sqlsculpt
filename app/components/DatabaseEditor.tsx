@@ -260,6 +260,7 @@ export default function SqlEditor() {
       typedValue1 = cleanValue1;
       typedValue2 = cleanValue2;
       // For text, BETWEEN is case-sensitive and inclusive of the second value
+
       return typedColumnValue >= typedValue1 && typedColumnValue <= typedValue2;
     }
 
@@ -519,19 +520,21 @@ export default function SqlEditor() {
 
     if (isDistinct) {
       const distinctRows = new Set<string>();
-      resultData = resultData.filter((row: Record<string, any>) => {
-        const key = actualFields
-          .map((field) => {
-            const alias = aliases[field as keyof PowerRanger] || field;
-            return `${alias}:${row[alias]}`;
-          })
-          .join("|");
-        if (distinctRows.has(key)) {
-          return false;
+      resultData = resultData.filter(
+        (row: Record<string, string | number | undefined>) => {
+          const key = actualFields
+            .map((field) => {
+              const alias = aliases[field as keyof PowerRanger] || field;
+              return `${alias}:${row[alias]}`;
+            })
+            .join("|");
+          if (distinctRows.has(key)) {
+            return false;
+          }
+          distinctRows.add(key);
+          return true;
         }
-        distinctRows.add(key);
-        return true;
-      });
+      );
 
       if (fields.length > 1) {
         const groupByFields = fields.map(
@@ -554,7 +557,7 @@ export default function SqlEditor() {
 
     try {
       setResult(JSON.stringify(resultData, null, 2));
-    } catch (e) {
+    } catch {
       setResult("Error: Failed to generate valid JSON output");
       setTooltip(null);
       return false;
@@ -675,6 +678,7 @@ export default function SqlEditor() {
           }
         }
       });
+
       // 8. Generic patterns based on column
       patterns.push(`'%${column.slice(0, 1).toUpperCase()}%'`);
       patterns.push(`'${column.slice(0, 1).toUpperCase()}%'`);
@@ -1115,7 +1119,7 @@ export default function SqlEditor() {
     return () => {
       view.destroy();
     };
-  }, []);
+  }, [runQuery, uniqueSeasons]);
 
   const isJson = (str: string): boolean => {
     try {
