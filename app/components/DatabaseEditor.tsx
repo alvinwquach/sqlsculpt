@@ -229,6 +229,45 @@ export default function SqlEditor() {
     return regex.test(String(columnValue));
   };
 
+  // NEW: Function to evaluate BETWEEN conditions
+  const evaluateBetweenCondition = (
+    row: PowerRanger,
+    column: string,
+    value1: string,
+    value2: string
+  ): boolean => {
+    const columnValue = row[column as keyof PowerRanger];
+    const columnType = powerRangersData.columns.find(
+      (col) => col.name === column
+    )?.type;
+
+    const cleanValue1 = value1.replace(/^'|'$/g, "");
+    const cleanValue2 = value2.replace(/^'|'$/g, "");
+
+    let typedColumnValue: string | number;
+    let typedValue1: string | number;
+    let typedValue2: string | number;
+
+    if (columnType === "integer") {
+      typedColumnValue = Number(columnValue);
+      typedValue1 = Number(cleanValue1);
+      typedValue2 = Number(cleanValue2);
+      // BETWEEN is inclusive of both values for numbers
+      if (isNaN(typedColumnValue) || isNaN(typedValue1) || isNaN(typedValue2)) {
+        return false;
+      }
+      return typedColumnValue >= typedValue1 && typedColumnValue <= typedValue2;
+    } else if (columnType === "date" || columnType === "text") {
+      typedColumnValue = String(columnValue);
+      typedValue1 = cleanValue1;
+      typedValue2 = cleanValue2;
+      // For text, BETWEEN is case-sensitive and inclusive of the second value
+      return typedColumnValue >= typedValue1 && typedColumnValue <= typedValue2;
+    }
+
+    return false;
+  };
+
   const evaluateCondition = (
     row: PowerRanger,
     column: string,
@@ -309,7 +348,6 @@ export default function SqlEditor() {
       return true;
     }
 
-    // Match SELECT or SELECT DISTINCT queries with optional WHERE clause
     const selectDistinctMatch = query.match(
       /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
     );
@@ -388,12 +426,13 @@ export default function SqlEditor() {
     };
 
     if (whereClause) {
+      // MODIFIED: Updated WHERE clause parsing to handle BETWEEN
       const whereMatch = whereClause.match(
-        /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)(?:\s*('[^']*'))?\s*$/i
+        /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL|BETWEEN)\s*(?:([^' ]\w*|'[^']*')(?:\s+AND\s+([^' ]\w*|'[^']*'))?)?\s*$/i
       );
       if (!whereMatch) {
         setResult(
-          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = '1', weapon LIKE 'Pow%', season IS NULL)"
+          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = '1', weapon LIKE 'Pow%', season IS NULL, power_level BETWEEN 80 AND 90)"
         );
         setTooltip(null);
         return false;
@@ -401,7 +440,8 @@ export default function SqlEditor() {
 
       const column = whereMatch[1];
       const operator = whereMatch[2];
-      const value = whereMatch[3];
+      const value1 = whereMatch[3];
+      const value2 = whereMatch[4];
 
       if (
         !powerRangersData.columns.some(
@@ -420,12 +460,20 @@ export default function SqlEditor() {
         ) {
           return evaluateNullCondition(row, column, operator);
         }
-        if (!value) {
+        if (operator.toUpperCase() === "BETWEEN") {
+          if (!value1 || !value2) {
+            setResult("Error: BETWEEN requires two values");
+            setTooltip(null);
+            return false;
+          }
+          return evaluateBetweenCondition(row, column, value1, value2);
+        }
+        if (!value1) {
           setResult(`Error: Missing value for operator ${operator}`);
           setTooltip(null);
           return false;
         }
-        return evaluateCondition(row, column, operator, value);
+        return evaluateCondition(row, column, operator, value1);
       });
     }
 
@@ -487,8 +535,8 @@ export default function SqlEditor() {
       if (columnType === "integer") {
         return Array.from(
           new Set(
-            powerRangersData.data.map(
-              (row) => `'${row[column as keyof PowerRanger]}'`
+            powerRangersData.data.map((row) =>
+              String(row[column as keyof PowerRanger])
             )
           )
         );
@@ -604,6 +652,56 @@ export default function SqlEditor() {
       patterns.push(`'%${column.slice(0, 1).toLowerCase()}%'`);
 
       return Array.from(new Set(patterns)).sort();
+    };
+
+    // NEW: Function to get BETWEEN value suggestions
+    const getBetweenValueSuggestions = (
+      column: string,
+      columnType: string | undefined
+    ): string[] => {
+      if (!columnType) return [];
+
+      if (columnType === "integer") {
+        const values = Array.from(
+          new Set(
+            powerRangersData.data.map((row) =>
+              Number(row[column as keyof PowerRanger])
+            )
+          )
+        ).sort((a, b) => a - b);
+        const suggestions: string[] = [];
+        if (values.length >= 2) {
+          suggestions.push(
+            `${values[0]} AND ${values[Math.min(1, values.length - 1)]}`
+          );
+          suggestions.push(
+            `${values[Math.floor(values.length / 2)]} AND ${
+              values[values.length - 1]
+            }`
+          );
+        }
+        return suggestions;
+      }
+
+      if (columnType === "text" || columnType === "date") {
+        const values = Array.from(
+          new Set(
+            powerRangersData.data.map((row) =>
+              String(row[column as keyof PowerRanger])
+            )
+          )
+        ).sort();
+        const suggestions: string[] = [];
+        if (values.length >= 2) {
+          suggestions.push(
+            `'${values[0]}' AND '${values[Math.min(1, values.length - 1)]}'`
+          );
+          suggestions.push(`'${values[0]}' AND '${values[values.length - 1]}'`);
+        }
+        return suggestions;
+      }
+
+      return [];
     };
 
     const getColumnOptions = (excludeFields: string[]) =>
@@ -818,7 +916,7 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options: getColumnOptions([]) };
       }
 
-      // 11. After WHERE column, suggest operators
+      // 11. After WHERE column, suggest operators including BETWEEN
       if (
         /from\s+power_rangers\s+where\s+\w+\s*$/i.test(docText) &&
         powerRangersData.columns.some((col) =>
@@ -861,6 +959,12 @@ export default function SqlEditor() {
               detail: "Pattern matching",
             },
             {
+              label: "BETWEEN",
+              type: "operator",
+              apply: "BETWEEN ",
+              detail: "Range filter",
+            },
+            {
               label: "IS NULL",
               type: "operator",
               apply: "IS NULL ",
@@ -876,19 +980,45 @@ export default function SqlEditor() {
         };
       }
 
+      // 12. After WHERE column operator, suggest values or BETWEEN range
       const valuePattern =
-        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*')?\s*$/i;
-      const operatorPattern =
-        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE)\s*$/i;
-      if (valuePattern.test(docText) || operatorPattern.test(docText)) {
-        const match =
-          docText.match(valuePattern) || docText.match(operatorPattern);
+        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?\s*(?:AND\s*('[^']*'|[^' ]\w*)?\s*)?)?$/i;
+      if (valuePattern.test(docText)) {
+        const match = docText.match(valuePattern);
         if (match) {
           const column = match[1];
           const operator = match[2];
+          const value1 = match[3];
+          const value2 = match[4];
           const columnType = powerRangersData.columns.find(
             (col) => col.name.toLowerCase() === column.toLowerCase()
           )?.type;
+
+          if (operator.toUpperCase() === "BETWEEN") {
+            if (!value1) {
+              const sampleValues = getUniqueValues(column, columnType);
+              return {
+                from: word?.from ?? cursorPos,
+                options: sampleValues.map((value) => ({
+                  label: value,
+                  type: "value",
+                  apply: value + " AND ",
+                  detail: "First value for BETWEEN",
+                })),
+              };
+            } else if (!value2) {
+              const sampleValues = getUniqueValues(column, columnType);
+              return {
+                from: word?.from ?? cursorPos,
+                options: sampleValues.map((value) => ({
+                  label: value,
+                  type: "value",
+                  apply: value,
+                  detail: "Second value for BETWEEN",
+                })),
+              };
+            }
+          }
 
           if (operator.toUpperCase() === "LIKE") {
             const likePatterns = getLikePatternSuggestions(column, columnType);
