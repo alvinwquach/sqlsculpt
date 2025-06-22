@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { EditorView } from "codemirror";
 import { sql } from "@codemirror/lang-sql";
 import { EditorState } from "@codemirror/state";
@@ -330,302 +330,293 @@ export default function SqlEditor() {
     return false;
   };
 
-  const runQuery = (view: EditorView): boolean => {
-    const query = view.state.doc.toString().trim();
+  const runQuery = useCallback(
+    (view: EditorView): boolean => {
+      const query = view.state.doc.toString().trim();
 
-    if (!query) {
-      setResult("No query entered");
-      setTooltip(null);
-      return true;
-    }
-
-    const lowerQuery = query.toLowerCase();
-    if (lowerQuery === "show tables") {
-      const showTablesResult: ShowTablesResult[] = [
-        { table_name: powerRangersData.tableName },
-      ];
-      setResult(JSON.stringify(showTablesResult, null, 2));
-      setTooltip(null);
-      return true;
-    }
-
-    if (lowerQuery === "describe power_rangers") {
-      const describeResult: DescribeResult[] = powerRangersData.columns.map(
-        (col) => ({
-          field: col.name,
-          type: col.type,
-          null: col.notNull ? "NO" : "YES",
-        })
-      );
-      setResult(JSON.stringify(describeResult, null, 2));
-      setTooltip(null);
-      return true;
-    }
-
-    const selectDistinctMatch = query.match(
-      /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
-    );
-    const selectMatch = query.match(
-      /^select\s+(?!distinct)(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
-    );
-
-    if (!selectMatch && !selectDistinctMatch) {
-      setResult(
-        "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
-      );
-      setTooltip(null);
-      return true;
-    }
-
-    const isDistinct = !!selectDistinctMatch;
-    const match = selectDistinctMatch ?? selectMatch;
-    const rawFieldsWithAliases = match![1].split(",").map((f) => f.trim());
-    const whereClause = match![2]?.trim();
-    const fields: string[] = [];
-    const aliases: { [key in keyof PowerRanger]?: string } = {};
-
-    for (const field of rawFieldsWithAliases) {
-      const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
-      if (asMatch) {
-        const fieldName = asMatch[1].trim();
-        const aliasName = asMatch[2];
-        fields.push(fieldName);
-        aliases[fieldName as keyof PowerRanger] = aliasName;
-      } else {
-        fields.push(field);
+      if (!query) {
+        setResult("No query entered");
+        setTooltip(null);
+        return true;
       }
-    }
 
-    const uniqueFields = new Set(fields);
-    if (uniqueFields.size !== fields.length) {
-      setResult("Error: Duplicate field names are not allowed");
-      setTooltip(null);
-      return false;
-    }
+      const lowerQuery = query.toLowerCase();
+      if (lowerQuery === "show tables") {
+        const showTablesResult: ShowTablesResult[] = [
+          { table_name: powerRangersData.tableName },
+        ];
+        setResult(JSON.stringify(showTablesResult, null, 2));
+        setTooltip(null);
+        return true;
+      }
 
-    if (fields.includes("*") && fields.length > 1) {
-      setResult("Error: Cannot mix * with specific fields");
-      setTooltip(null);
-      return false;
-    }
+      if (lowerQuery === "describe power_rangers") {
+        const describeResult: DescribeResult[] = powerRangersData.columns.map(
+          (col) => ({
+            field: col.name,
+            type: col.type,
+            null: col.notNull ? "NO" : "YES",
+          })
+        );
+        setResult(JSON.stringify(describeResult, null, 2));
+        setTooltip(null);
+        return true;
+      }
 
-    const actualFields = fields.includes("*")
-      ? powerRangersData.columns.map((col) => col.name)
-      : fields;
+      const selectDistinctMatch = query.match(
+        /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
+      );
+      const selectMatch = query.match(
+        /^select\s+(?!distinct)(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
+      );
 
-    const invalidFields = actualFields.filter(
-      (field) => !powerRangersData.columns.some((col) => col.name === field)
-    );
-    if (invalidFields.length > 0) {
-      setResult(`Error: Invalid field(s): ${invalidFields.join(", ")}`);
-      setTooltip(null);
-      return false;
-    }
+      if (!selectMatch && !selectDistinctMatch) {
+        setResult(
+          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+        );
+        setTooltip(null);
+        return true;
+      }
 
-    let filteredData: PowerRanger[] = powerRangersData.data;
+      const isDistinct = !!selectDistinctMatch;
+      const match = selectDistinctMatch ?? selectMatch;
+      const rawFieldsWithAliases = match![1].split(",").map((f) => f.trim());
+      const whereClause = match![2]?.trim();
+      const fields: string[] = [];
+      const aliases: { [key in keyof PowerRanger]?: string } = {};
 
-    if (whereClause) {
-      const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-      const conditions: Array<{
-        column: string;
-        operator: string;
-        value1?: string;
-        value2?: string;
-        join?: "AND" | "OR";
-      }> = [];
-      const joinOperators: string[] = [];
-
-      for (let i = 0; i < conditionParts.length; i++) {
-        if (i % 2 === 0) {
-          const part = conditionParts[i].trim();
-          const betweenMatch = part.match(
-            /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-          );
-          if (betweenMatch) {
-            const [, column, value1, value2] = betweenMatch;
-            conditions.push({ column, operator: "BETWEEN", value1, value2 });
-          } else {
-            const conditionMatch = part.match(
-              /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-            );
-            if (!conditionMatch) {
-              setResult(`Error: Invalid condition in WHERE clause: ${part}`);
-              setTooltip(null);
-              return false;
-            }
-            const [, column, operator, value1] = conditionMatch;
-            conditions.push({ column, operator, value1 });
-          }
+      for (const field of rawFieldsWithAliases) {
+        const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
+        if (asMatch) {
+          const fieldName = asMatch[1].trim();
+          const aliasName = asMatch[2];
+          fields.push(fieldName);
+          aliases[fieldName as keyof PowerRanger] = aliasName;
         } else {
-          joinOperators.push(conditionParts[i].toUpperCase());
+          fields.push(field);
         }
       }
 
-      for (let i = 0; i < conditions.length - 1; i++) {
-        conditions[i].join = joinOperators[i] as "AND" | "OR";
+      const uniqueFields = new Set(fields);
+      if (uniqueFields.size !== fields.length) {
+        setResult("Error: Duplicate field names are not allowed");
+        setTooltip(null);
+        return false;
       }
 
-      for (const condition of conditions) {
-        const { column, operator, value1, value2 } = condition;
-        if (
-          !powerRangersData.columns.some(
-            (col) => col.name.toLowerCase() === column.toLowerCase()
-          )
-        ) {
-          setResult(`Error: Invalid column in WHERE clause: ${column}`);
-          setTooltip(null);
-          return false;
-        }
-
-        if (operator.toUpperCase() === "BETWEEN" && (!value1 || !value2)) {
-          setResult("Error: BETWEEN requires two values");
-          setTooltip(null);
-          return false;
-        }
-
-        if (
-          !["IS NULL", "IS NOT NULL", "BETWEEN"].includes(
-            operator.toUpperCase()
-          ) &&
-          !value1
-        ) {
-          setResult(`Error: Missing value for operator ${operator}`);
-          setTooltip(null);
-          return false;
-        }
+      if (fields.includes("*") && fields.length > 1) {
+        setResult("Error: Cannot mix * with specific fields");
+        setTooltip(null);
+        return false;
       }
 
-      filteredData = filteredData.filter((row) => {
-        let result = true;
-        let currentGroup: Array<{
+      const actualFields = fields.includes("*")
+        ? powerRangersData.columns.map((col) => col.name)
+        : fields;
+
+      const invalidFields = actualFields.filter(
+        (field) => !powerRangersData.columns.some((col) => col.name === field)
+      );
+      if (invalidFields.length > 0) {
+        setResult(`Error: Invalid field(s): ${invalidFields.join(", ")}`);
+        setTooltip(null);
+        return false;
+      }
+
+      let filteredData: PowerRanger[] = powerRangersData.data;
+
+      if (whereClause) {
+        const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
+        const conditions: Array<{
           column: string;
           operator: string;
           value1?: string;
           value2?: string;
+          join?: "AND" | "OR";
         }> = [];
-        let lastJoin: "AND" | "OR" | null = null;
+        const joinOperators: string[] = [];
+
+        for (let i = 0; i < conditionParts.length; i++) {
+          if (i % 2 === 0) {
+            const part = conditionParts[i].trim();
+            const betweenMatch = part.match(
+              /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+            );
+            if (betweenMatch) {
+              const [, column, value1, value2] = betweenMatch;
+              conditions.push({ column, operator: "BETWEEN", value1, value2 });
+            } else {
+              const conditionMatch = part.match(
+                /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+              );
+              if (!conditionMatch) {
+                setResult(`Error: Invalid condition in WHERE clause: ${part}`);
+                setTooltip(null);
+                return false;
+              }
+              const [, column, operator, value1] = conditionMatch;
+              conditions.push({ column, operator, value1 });
+            }
+          } else {
+            joinOperators.push(conditionParts[i].toUpperCase());
+          }
+        }
+
+        for (let i = 0; i < conditions.length - 1; i++) {
+          conditions[i].join = joinOperators[i] as "AND" | "OR";
+        }
 
         for (const condition of conditions) {
-          const { column, operator, value1, value2, join } = condition;
-
-          let conditionResult: boolean;
-          if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
-            conditionResult = evaluateNullCondition(row, column, operator);
-          } else if (operator.toUpperCase() === "BETWEEN") {
-            if (!value1 || !value2) return false;
-            conditionResult = evaluateBetweenCondition(
-              row,
-              column,
-              value1,
-              value2
-            );
-          } else {
-            if (!value1) return false;
-            conditionResult = evaluateCondition(row, column, operator, value1);
-          }
-
-          // Add condition to the current group
-          currentGroup.push({ column, operator, value1, value2 });
-
-          // If there's a join operator or it's the last condition, evaluate the group
-          if (join || conditions.indexOf(condition) === conditions.length - 1) {
-            const groupResult = currentGroup[
-              operator.toUpperCase() === "BETWEEN" ? "some" : "every"
-            ]((cond) => {
-              if (
-                ["IS NULL", "IS NOT NULL"].includes(cond.operator.toUpperCase())
-              ) {
-                return evaluateNullCondition(row, cond.column, cond.operator);
-              } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                if (!cond.value1 || !cond.value2) return false;
-                return evaluateBetweenCondition(
-                  row,
-                  cond.column,
-                  cond.value1,
-                  cond.value2
-                );
-              } else {
-                if (!cond.value1) return false;
-                return evaluateCondition(
-                  row,
-                  cond.column,
-                  cond.operator,
-                  cond.value1
-                );
-              }
-            });
-
-            if (lastJoin === "OR") {
-              result = result || groupResult;
-            } else {
-              result = result && groupResult;
-            }
-
-            // Reset group for the next set of conditions
-            currentGroup = [];
-            lastJoin = join || null;
-          }
-        }
-
-        return result;
-      });
-    }
-
-    let resultData: Partial<PowerRanger>[] = filteredData.map((row) =>
-      Object.fromEntries(
-        actualFields.map((field) => {
-          const alias = aliases[field as keyof PowerRanger] || field;
-          return [alias, row[field as keyof PowerRanger]];
-        })
-      )
-    );
-
-    if (isDistinct) {
-      const distinctRows = new Set<string>();
-      resultData = resultData.filter(
-        (row: Record<string, string | number | undefined>) => {
-          const key = actualFields
-            .map((field) => {
-              const alias = aliases[field as keyof PowerRanger] || field;
-              return `${alias}:${row[alias]}`;
-            })
-            .join("|");
-          if (distinctRows.has(key)) {
+          const { column, operator, value1, value2 } = condition;
+          if (
+            !powerRangersData.columns.some(
+              (col) => col.name.toLowerCase() === column.toLowerCase()
+            )
+          ) {
+            setResult(`Error: Invalid column in WHERE clause: ${column}`);
+            setTooltip(null);
             return false;
           }
-          distinctRows.add(key);
-          return true;
+
+          if (operator.toUpperCase() === "BETWEEN" && (!value1 || !value2)) {
+            setResult("Error: BETWEEN requires two values");
+            setTooltip(null);
+            return false;
+          }
+
+          if (
+            !["IS NULL", "IS NOT NULL", "BETWEEN"].includes(
+              operator.toUpperCase()
+            ) &&
+            !value1
+          ) {
+            setResult(`Error: Missing value for operator ${operator}`);
+            setTooltip(null);
+            return false;
+          }
         }
+
+        filteredData = filteredData.filter((row) => {
+          let result = true;
+          let currentGroup: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+          }> = [];
+          let lastJoin: "AND" | "OR" | null = null;
+
+          for (const condition of conditions) {
+            const { column, operator, value1, value2, join } = condition;
+
+            // Add condition to the current group
+            currentGroup.push({ column, operator, value1, value2 });
+
+            // If there's a join operator or it's the last condition, evaluate the group
+            if (
+              join ||
+              conditions.indexOf(condition) === conditions.length - 1
+            ) {
+              const groupResult = currentGroup.every((cond) => {
+                if (
+                  ["IS NULL", "IS NOT NULL"].includes(
+                    cond.operator.toUpperCase()
+                  )
+                ) {
+                  return evaluateNullCondition(row, cond.column, cond.operator);
+                } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                  if (!cond.value1 || !cond.value2) return false;
+                  return evaluateBetweenCondition(
+                    row,
+                    cond.column,
+                    cond.value1,
+                    cond.value2
+                  );
+                } else {
+                  if (!cond.value1) return false;
+                  return evaluateCondition(
+                    row,
+                    cond.column,
+                    cond.operator,
+                    cond.value1
+                  );
+                }
+              });
+
+              // For OR, include rows if any condition is true; otherwise, all must be true (AND)
+              if (lastJoin === "OR") {
+                result = result || groupResult;
+              } else {
+                result = result && groupResult;
+              }
+
+              // Reset group for the next set of conditions
+              currentGroup = [];
+              lastJoin = join || null;
+            }
+          }
+
+          return result;
+        });
+      }
+
+      let resultData: Partial<PowerRanger>[] = filteredData.map((row) =>
+        Object.fromEntries(
+          actualFields.map((field) => {
+            const alias = aliases[field as keyof PowerRanger] || field;
+            return [alias, row[field as keyof PowerRanger]];
+          })
+        )
       );
 
-      if (fields.length > 1) {
-        const groupByFields = fields.map(
-          (field) => aliases[field as keyof PowerRanger] || field
+      if (isDistinct) {
+        const distinctRows = new Set<string>();
+        resultData = resultData.filter(
+          (row: Record<string, string | number | undefined>) => {
+            const key = actualFields
+              .map((field) => {
+                const alias = aliases[field as keyof PowerRanger] || field;
+                return `${alias}:${row[alias]}`;
+              })
+              .join("|");
+            if (distinctRows.has(key)) {
+              return false;
+            }
+            distinctRows.add(key);
+            return true;
+          }
         );
-        setTooltip(
-          `SELECT DISTINCT ${groupByFields.join(
-            ", "
-          )} FROM power_rangers is roughly equivalent to: SELECT ${groupByFields.join(
-            ", "
-          )} FROM power_rangers GROUP BY ${groupByFields.join(", ")}`
-        );
-        setTimeout(() => setTooltip(null), 5000);
+
+        if (fields.length > 1) {
+          const groupByFields = fields.map(
+            (field) => aliases[field as keyof PowerRanger] || field
+          );
+          setTooltip(
+            `SELECT DISTINCT ${groupByFields.join(
+              ", "
+            )} FROM power_rangers is roughly equivalent to: SELECT ${groupByFields.join(
+              ", "
+            )} FROM power_rangers GROUP BY ${groupByFields.join(", ")}`
+          );
+          setTimeout(() => setTooltip(null), 5000);
+        } else {
+          setTooltip(null);
+        }
       } else {
         setTooltip(null);
       }
-    } else {
-      setTooltip(null);
-    }
 
-    try {
-      setResult(JSON.stringify(resultData, null, 2));
-    } catch {
-      setResult("Error: Failed to generate valid JSON output");
-      setTooltip(null);
-      return false;
-    }
-    return true;
-  };
+      try {
+        setResult(JSON.stringify(resultData, null, 2));
+      } catch {
+        setResult("Error: Failed to generate valid JSON output");
+        setTooltip(null);
+        return false;
+      }
+      return true;
+    },
+    [setResult, setTooltip]
+  );
 
   useEffect(() => {
     const getUniqueValues = (
@@ -1009,7 +1000,12 @@ export default function SqlEditor() {
               apply: "> ",
               detail: "Greater than",
             },
-            { label: "<", type: "operator", apply: "< ", detail: "Less than" },
+            {
+              label: "<",
+              type: "operator",
+              apply: "< ",
+              detail: "Less than",
+            },
             {
               label: ">=",
               type: "operator",
