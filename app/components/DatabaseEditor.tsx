@@ -220,16 +220,15 @@ export default function SqlEditor() {
     columnValue: string | number,
     pattern: string
   ): boolean => {
-    const cleanPattern = pattern.replace(/^'|'$/g, ""); // Remove surrounding quotes
+    const cleanPattern = pattern.replace(/^'|'$/g, "");
     const regexPattern = cleanPattern
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // Escape special regex characters
-      .replace(/%/g, ".*") // Convert % to match any sequence
-      .replace(/_/g, "."); // Convert _ to match single character
-    const regex = new RegExp(`^${regexPattern}$`, "i"); // Case-insensitive match
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/%/g, ".*")
+      .replace(/_/g, ".");
+    const regex = new RegExp(`^${regexPattern}$`, "i");
     return regex.test(String(columnValue));
   };
 
-  // NEW: Function to evaluate BETWEEN conditions
   const evaluateBetweenCondition = (
     row: PowerRanger,
     column: string,
@@ -252,7 +251,6 @@ export default function SqlEditor() {
       typedColumnValue = Number(columnValue);
       typedValue1 = Number(cleanValue1);
       typedValue2 = Number(cleanValue2);
-      // BETWEEN is inclusive of both values for numbers
       if (isNaN(typedColumnValue) || isNaN(typedValue1) || isNaN(typedValue2)) {
         return false;
       }
@@ -290,12 +288,14 @@ export default function SqlEditor() {
     if (columnType === "integer") {
       typedColumnValue = Number(columnValue);
       typedValue = Number(cleanValue);
-    } else if (columnType === "date") {
-      typedColumnValue = columnValue as string;
+      if (isNaN(typedColumnValue) || isNaN(typedValue)) {
+        return false;
+      }
+    } else if (columnType === "date" || columnType === "text") {
+      typedColumnValue = String(columnValue);
       typedValue = cleanValue;
     } else {
-      typedColumnValue = columnValue as string;
-      typedValue = cleanValue;
+      return false;
     }
 
     switch (operator.toUpperCase()) {
@@ -314,6 +314,21 @@ export default function SqlEditor() {
       default:
         return false;
     }
+  };
+
+  const evaluateNullCondition = (
+    row: PowerRanger,
+    column: string,
+    operator: string
+  ): boolean => {
+    const columnValue = row[column as keyof PowerRanger];
+    if (operator.toUpperCase() === "IS NULL") {
+      return columnValue === null || columnValue === undefined;
+    }
+    if (operator.toUpperCase() === "IS NOT NULL") {
+      return columnValue !== null && columnValue !== undefined;
+    }
+    return false;
   };
 
   const runQuery = (view: EditorView): boolean => {
@@ -410,69 +425,86 @@ export default function SqlEditor() {
 
     let filteredData: PowerRanger[] = powerRangersData.data;
 
-    const evaluateNullCondition = (
-      row: PowerRanger,
-      column: string,
-      operator: string
-    ): boolean => {
-      const columnValue = row[column as keyof PowerRanger];
-      if (operator.toUpperCase() === "IS NULL") {
-        return columnValue === null || columnValue === undefined;
-      }
-      if (operator.toUpperCase() === "IS NOT NULL") {
-        return columnValue !== null && columnValue !== undefined;
-      }
-      return false;
-    };
-
     if (whereClause) {
-      const whereMatch = whereClause.match(
-        /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL|BETWEEN)\s*(?:([^' ]\w*|'[^']*')(?:\s+AND\s+([^' ]\w*|'[^']*'))?)?\s*$/i
-      );
-      if (!whereMatch) {
-        setResult(
-          "Error: Invalid WHERE clause. Must be 'column operator value' (e.g., id = '1', weapon LIKE 'Pow%', season IS NULL, power_level BETWEEN 80 AND 90)"
+      const conditions: Array<{
+        column: string;
+        operator: string;
+        value1?: string;
+        value2?: string;
+      }> = [];
+      const conditionParts = whereClause
+        .split(/\s+AND\s+/i)
+        .map((part) => part.trim());
+
+      for (const part of conditionParts) {
+        const betweenMatch = part.match(
+          /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
         );
-        setTooltip(null);
-        return false;
+        if (betweenMatch) {
+          const [, column, value1, value2] = betweenMatch;
+          conditions.push({ column, operator: "BETWEEN", value1, value2 });
+          continue;
+        }
+
+        const conditionMatch = part.match(
+          /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+        );
+        if (!conditionMatch) {
+          setResult(`Error: Invalid condition in WHERE clause: ${part}`);
+          setTooltip(null);
+          return false;
+        }
+
+        const [, column, operator, value1] = conditionMatch;
+        conditions.push({ column, operator, value1 });
       }
 
-      const column = whereMatch[1];
-      const operator = whereMatch[2];
-      const value1 = whereMatch[3];
-      const value2 = whereMatch[4];
-
-      if (
-        !powerRangersData.columns.some(
-          (col) => col.name.toLowerCase() === column.toLowerCase()
-        )
-      ) {
-        setResult(`Error: Invalid column in WHERE clause: ${column}`);
-        setTooltip(null);
-        return false;
-      }
-
-      filteredData = filteredData.filter((row) => {
+      for (const condition of conditions) {
+        const { column, operator, value1, value2 } = condition;
         if (
-          operator.toUpperCase() === "IS NULL" ||
-          operator.toUpperCase() === "IS NOT NULL"
+          !powerRangersData.columns.some(
+            (col) => col.name.toLowerCase() === column.toLowerCase()
+          )
         ) {
-          return evaluateNullCondition(row, column, operator);
+          setResult(`Error: Invalid column in WHERE clause: ${column}`);
+          setTooltip(null);
+          return false;
         }
-        if (operator.toUpperCase() === "BETWEEN") {
-          if (!value1 || !value2) {
-            setResult("Error: BETWEEN requires two values");
-            setTooltip(null);
-            return false;
-          }
-          return evaluateBetweenCondition(row, column, value1, value2);
+
+        if (operator.toUpperCase() === "BETWEEN" && (!value1 || !value2)) {
+          setResult("Error: BETWEEN requires two values");
+          setTooltip(null);
+          return false;
         }
-        if (!value1) {
+
+        if (
+          !["IS NULL", "IS NOT NULL", "BETWEEN"].includes(
+            operator.toUpperCase()
+          ) &&
+          !value1
+        ) {
           setResult(`Error: Missing value for operator ${operator}`);
           setTooltip(null);
           return false;
         }
-        return evaluateCondition(row, column, operator, value1);
+      }
+
+      filteredData = filteredData.filter((row) => {
+        return conditions.every((condition) => {
+          const { column, operator, value1, value2 } = condition;
+
+          if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
+            return evaluateNullCondition(row, column, operator);
+          }
+
+          if (operator.toUpperCase() === "BETWEEN") {
+            if (!value1 || !value2) return false;
+            return evaluateBetweenCondition(row, column, value1, value2);
+          }
+
+          if (!value1) return false;
+          return evaluateCondition(row, column, operator, value1);
+        });
       });
     }
 
@@ -487,11 +519,11 @@ export default function SqlEditor() {
 
     if (isDistinct) {
       const distinctRows = new Set<string>();
-      resultData = resultData.filter((row) => {
+      resultData = resultData.filter((row: Record<string, any>) => {
         const key = actualFields
           .map((field) => {
             const alias = aliases[field as keyof PowerRanger] || field;
-            return `${alias}:${row[alias as keyof PowerRanger]}`;
+            return `${alias}:${row[alias]}`;
           })
           .join("|");
         if (distinctRows.has(key)) {
@@ -520,7 +552,13 @@ export default function SqlEditor() {
       setTooltip(null);
     }
 
-    setResult(JSON.stringify(resultData, null, 2));
+    try {
+      setResult(JSON.stringify(resultData, null, 2));
+    } catch (e) {
+      setResult("Error: Failed to generate valid JSON output");
+      setTooltip(null);
+      return false;
+    }
     return true;
   };
 
@@ -538,20 +576,20 @@ export default function SqlEditor() {
               String(row[column as keyof PowerRanger])
             )
           )
-        );
+        ).sort((a, b) => Number(a) - Number(b));
       }
 
       if (columnType === "date" || columnType === "text") {
         if (column.toLowerCase() === "season") {
-          return uniqueSeasons.map((season) => `'${season}'`);
+          return uniqueSeasons.map((season) => `'${season}'`).sort();
         }
         return Array.from(
           new Set(
             powerRangersData.data.map(
-              (row) => `'${row[column as keyof PowerRanger]}'`
+              (row) => `'${String(row[column as keyof PowerRanger])}'`
             )
           )
-        );
+        ).sort();
       }
 
       return [];
@@ -575,10 +613,8 @@ export default function SqlEditor() {
 
       values.forEach((value) => {
         const len = value.length;
-
         // 1. Exact match
         patterns.push(`'${value}'`);
-
         // 2. Prefix patterns (e.g., 'B%')
         for (let i = 1; i <= Math.min(len, 4); i++) {
           const prefixPattern = `'${value.slice(0, i)}%'`;
@@ -586,7 +622,6 @@ export default function SqlEditor() {
             patterns.push(prefixPattern);
           }
         }
-
         // 3. Suffix patterns (e.g., '%ue')
         for (let i = 1; i <= Math.min(len, 4); i++) {
           const suffixPattern = `'%${value.slice(-i)}'`;
@@ -594,7 +629,6 @@ export default function SqlEditor() {
             patterns.push(suffixPattern);
           }
         }
-
         // 4. Contains patterns (e.g., '%lu%')
         for (let i = 1; i < len; i++) {
           for (let j = i + 1; j <= len; j++) {
@@ -607,7 +641,6 @@ export default function SqlEditor() {
             }
           }
         }
-
         // 5. Single character replacement with underscore (e.g., 'B_ue')
         if (len >= 2) {
           for (let i = 0; i < len; i++) {
@@ -623,7 +656,6 @@ export default function SqlEditor() {
             }
           }
         }
-
         // 6. Patterns with underscores for each character (e.g., 'B___')
         if (len > 1) {
           const underscorePattern = `'${Array(len).fill("_").join("")}'`;
@@ -631,7 +663,6 @@ export default function SqlEditor() {
             patterns.push(underscorePattern);
           }
         }
-
         // 7. Partial prefix with underscore (e.g., 'Bl_e')
         if (len > 2) {
           for (let i = 2; i < len; i++) {
@@ -644,7 +675,6 @@ export default function SqlEditor() {
           }
         }
       });
-
       // 8. Generic patterns based on column
       patterns.push(`'%${column.slice(0, 1).toUpperCase()}%'`);
       patterns.push(`'${column.slice(0, 1).toUpperCase()}%'`);
@@ -662,6 +692,29 @@ export default function SqlEditor() {
           detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
           apply: col.name,
         }));
+
+    const getUsedColumnsInWhere = (whereClause: string): string[] => {
+      const usedColumns: string[] = [];
+      const conditionParts = whereClause
+        .split(/\s+AND\s+/i)
+        .map((part) => part.trim());
+      for (const part of conditionParts) {
+        const conditionMatch = part.match(
+          /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN|IS NULL|IS NOT NULL)/i
+        );
+        if (conditionMatch) {
+          const column = conditionMatch[1].toLowerCase();
+          if (
+            powerRangersData.columns.some(
+              (col) => col.name.toLowerCase() === column
+            )
+          ) {
+            usedColumns.push(column);
+          }
+        }
+      }
+      return Array.from(new Set(usedColumns));
+    };
 
     const completion = (ctx: CompletionContext) => {
       const word = ctx.matchBefore(/[\w*']*/);
@@ -831,6 +884,7 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options };
       }
 
+      // 8. After FROM, suggest power_rangers
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -865,9 +919,9 @@ export default function SqlEditor() {
         return { from: word?.from ?? cursorPos, options: getColumnOptions([]) };
       }
 
-      // 11. After WHERE column, suggest operators including BETWEEN
+      // 11. After WHERE column, suggest operators
       if (
-        /from\s+power_rangers\s+where\s+\w+\s*$/i.test(docText) &&
+        /from\s+power_rangers\s+where\s+.*?\b(\w+)\s*$/i.test(docText) &&
         powerRangersData.columns.some((col) =>
           new RegExp(`\\b${col.name.toLowerCase()}\\s*$`, "i").test(docText)
         )
@@ -929,18 +983,17 @@ export default function SqlEditor() {
         };
       }
 
-      // 12. After WHERE column operator, suggest values or BETWEEN range
+      // 12. After WHERE column operator, suggest values (including after AND)
       const valuePattern =
-        /from\s+power_rangers\s+where\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?\s*(?:AND\s*('[^']*'|[^' ]\w*)?\s*)?)?$/i;
+        /from\s+power_rangers\s+where\s+(?:.*?\s+and\s+)?(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
       if (valuePattern.test(docText)) {
         const match = docText.match(valuePattern);
         if (match) {
           const column = match[1];
           const operator = match[2];
           const value1 = match[3];
-          const value2 = match[4];
           const columnType = powerRangersData.columns.find(
-            (col) => col.name.toLowerCase() === column.toLowerCase()
+            (col) => col.name.toLowerCase() === column?.toLowerCase()
           )?.type;
 
           if (operator.toUpperCase() === "BETWEEN") {
@@ -955,7 +1008,7 @@ export default function SqlEditor() {
                   detail: "First value for BETWEEN",
                 })),
               };
-            } else if (!value2) {
+            } else {
               const sampleValues = getUniqueValues(column, columnType);
               return {
                 from: word?.from ?? cursorPos,
@@ -982,6 +1035,10 @@ export default function SqlEditor() {
             };
           }
 
+          if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
+            return null;
+          }
+
           const sampleValues = getUniqueValues(column, columnType);
           return {
             from: word?.from ?? cursorPos,
@@ -993,6 +1050,36 @@ export default function SqlEditor() {
             })),
           };
         }
+      }
+
+      // 13. After a complete condition, suggest AND
+      if (
+        /from\s+power_rangers\s+where\s+.*?(?:\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)|\w+\s*BETWEEN\s*('[^']*'|[^' ]\w*)\s*AND\s*('[^']*'|[^' ]\w*)|\w+\s*(IS NULL|IS NOT NULL))\s*$/i.test(
+          docText
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "AND",
+              type: "keyword",
+              apply: " AND ",
+              detail: "Combine with another condition",
+            },
+          ],
+        };
+      }
+
+      // 14. After AND, suggest remaining columns
+      if (/from\s+power_rangers\s+where\s+.*?\s+and\s*$/i.test(docText)) {
+        const whereClause =
+          docText.match(/where\s+(.+?)\s+and\s*$/i)?.[1] || "";
+        const usedColumns = getUsedColumnsInWhere(whereClause);
+        return {
+          from: word?.from ?? cursorPos,
+          options: getColumnOptions(usedColumns),
+        };
       }
 
       return null;
@@ -1054,7 +1141,7 @@ export default function SqlEditor() {
           {result}
         </pre>
       ) : (
-        <div className="text-red-400">Error: Invalid JSON format</div>
+        <div className="text-red-400">{result}</div>
       );
     }
 
@@ -1100,11 +1187,7 @@ export default function SqlEditor() {
         </div>
       );
     } else {
-      return (
-        <pre className="text-green-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
-          {result}
-        </pre>
-      );
+      return <div className="text-red-400">{result}</div>;
     }
   };
 
