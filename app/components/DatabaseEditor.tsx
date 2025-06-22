@@ -426,7 +426,6 @@ export default function SqlEditor() {
     };
 
     if (whereClause) {
-      // MODIFIED: Updated WHERE clause parsing to handle BETWEEN
       const whereMatch = whereClause.match(
         /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL|BETWEEN)\s*(?:([^' ]\w*|'[^']*')(?:\s+AND\s+([^' ]\w*|'[^']*'))?)?\s*$/i
       );
