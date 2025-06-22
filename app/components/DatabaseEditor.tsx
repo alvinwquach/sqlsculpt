@@ -653,56 +653,6 @@ export default function SqlEditor() {
       return Array.from(new Set(patterns)).sort();
     };
 
-    // NEW: Function to get BETWEEN value suggestions
-    const getBetweenValueSuggestions = (
-      column: string,
-      columnType: string | undefined
-    ): string[] => {
-      if (!columnType) return [];
-
-      if (columnType === "integer") {
-        const values = Array.from(
-          new Set(
-            powerRangersData.data.map((row) =>
-              Number(row[column as keyof PowerRanger])
-            )
-          )
-        ).sort((a, b) => a - b);
-        const suggestions: string[] = [];
-        if (values.length >= 2) {
-          suggestions.push(
-            `${values[0]} AND ${values[Math.min(1, values.length - 1)]}`
-          );
-          suggestions.push(
-            `${values[Math.floor(values.length / 2)]} AND ${
-              values[values.length - 1]
-            }`
-          );
-        }
-        return suggestions;
-      }
-
-      if (columnType === "text" || columnType === "date") {
-        const values = Array.from(
-          new Set(
-            powerRangersData.data.map((row) =>
-              String(row[column as keyof PowerRanger])
-            )
-          )
-        ).sort();
-        const suggestions: string[] = [];
-        if (values.length >= 2) {
-          suggestions.push(
-            `'${values[0]}' AND '${values[Math.min(1, values.length - 1)]}'`
-          );
-          suggestions.push(`'${values[0]}' AND '${values[values.length - 1]}'`);
-        }
-        return suggestions;
-      }
-
-      return [];
-    };
-
     const getColumnOptions = (excludeFields: string[]) =>
       powerRangersData.columns
         .filter((col) => !excludeFields.includes(col.name.toLowerCase()))
