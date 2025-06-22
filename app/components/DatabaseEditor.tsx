@@ -259,8 +259,6 @@ export default function SqlEditor() {
       typedColumnValue = String(columnValue);
       typedValue1 = cleanValue1;
       typedValue2 = cleanValue2;
-      // For text, BETWEEN is case-sensitive and inclusive of the second value
-
       return typedColumnValue >= typedValue1 && typedColumnValue <= typedValue2;
     }
 
@@ -427,37 +425,44 @@ export default function SqlEditor() {
     let filteredData: PowerRanger[] = powerRangersData.data;
 
     if (whereClause) {
+      const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
       const conditions: Array<{
         column: string;
         operator: string;
         value1?: string;
         value2?: string;
+        join?: "AND" | "OR";
       }> = [];
-      const conditionParts = whereClause
-        .split(/\s+AND\s+/i)
-        .map((part) => part.trim());
+      const joinOperators: string[] = [];
 
-      for (const part of conditionParts) {
-        const betweenMatch = part.match(
-          /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-        );
-        if (betweenMatch) {
-          const [, column, value1, value2] = betweenMatch;
-          conditions.push({ column, operator: "BETWEEN", value1, value2 });
-          continue;
+      for (let i = 0; i < conditionParts.length; i++) {
+        if (i % 2 === 0) {
+          const part = conditionParts[i].trim();
+          const betweenMatch = part.match(
+            /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+          );
+          if (betweenMatch) {
+            const [, column, value1, value2] = betweenMatch;
+            conditions.push({ column, operator: "BETWEEN", value1, value2 });
+          } else {
+            const conditionMatch = part.match(
+              /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+            );
+            if (!conditionMatch) {
+              setResult(`Error: Invalid condition in WHERE clause: ${part}`);
+              setTooltip(null);
+              return false;
+            }
+            const [, column, operator, value1] = conditionMatch;
+            conditions.push({ column, operator, value1 });
+          }
+        } else {
+          joinOperators.push(conditionParts[i].toUpperCase());
         }
+      }
 
-        const conditionMatch = part.match(
-          /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-        );
-        if (!conditionMatch) {
-          setResult(`Error: Invalid condition in WHERE clause: ${part}`);
-          setTooltip(null);
-          return false;
-        }
-
-        const [, column, operator, value1] = conditionMatch;
-        conditions.push({ column, operator, value1 });
+      for (let i = 0; i < conditions.length - 1; i++) {
+        conditions[i].join = joinOperators[i] as "AND" | "OR";
       }
 
       for (const condition of conditions) {
@@ -491,21 +496,78 @@ export default function SqlEditor() {
       }
 
       filteredData = filteredData.filter((row) => {
-        return conditions.every((condition) => {
-          const { column, operator, value1, value2 } = condition;
+        let result = true;
+        let currentGroup: Array<{
+          column: string;
+          operator: string;
+          value1?: string;
+          value2?: string;
+        }> = [];
+        let lastJoin: "AND" | "OR" | null = null;
 
+        for (const condition of conditions) {
+          const { column, operator, value1, value2, join } = condition;
+
+          let conditionResult: boolean;
           if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
-            return evaluateNullCondition(row, column, operator);
-          }
-
-          if (operator.toUpperCase() === "BETWEEN") {
+            conditionResult = evaluateNullCondition(row, column, operator);
+          } else if (operator.toUpperCase() === "BETWEEN") {
             if (!value1 || !value2) return false;
-            return evaluateBetweenCondition(row, column, value1, value2);
+            conditionResult = evaluateBetweenCondition(
+              row,
+              column,
+              value1,
+              value2
+            );
+          } else {
+            if (!value1) return false;
+            conditionResult = evaluateCondition(row, column, operator, value1);
           }
 
-          if (!value1) return false;
-          return evaluateCondition(row, column, operator, value1);
-        });
+          // Add condition to the current group
+          currentGroup.push({ column, operator, value1, value2 });
+
+          // If there's a join operator or it's the last condition, evaluate the group
+          if (join || conditions.indexOf(condition) === conditions.length - 1) {
+            const groupResult = currentGroup[
+              operator.toUpperCase() === "BETWEEN" ? "some" : "every"
+            ]((cond) => {
+              if (
+                ["IS NULL", "IS NOT NULL"].includes(cond.operator.toUpperCase())
+              ) {
+                return evaluateNullCondition(row, cond.column, cond.operator);
+              } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                if (!cond.value1 || !cond.value2) return false;
+                return evaluateBetweenCondition(
+                  row,
+                  cond.column,
+                  cond.value1,
+                  cond.value2
+                );
+              } else {
+                if (!cond.value1) return false;
+                return evaluateCondition(
+                  row,
+                  cond.column,
+                  cond.operator,
+                  cond.value1
+                );
+              }
+            });
+
+            if (lastJoin === "OR") {
+              result = result || groupResult;
+            } else {
+              result = result && groupResult;
+            }
+
+            // Reset group for the next set of conditions
+            currentGroup = [];
+            lastJoin = join || null;
+          }
+        }
+
+        return result;
       });
     }
 
@@ -700,7 +762,8 @@ export default function SqlEditor() {
     const getUsedColumnsInWhere = (whereClause: string): string[] => {
       const usedColumns: string[] = [];
       const conditionParts = whereClause
-        .split(/\s+AND\s+/i)
+        .split(/\s+(AND|OR)\s+/i)
+        .filter((_, index) => index % 2 === 0)
         .map((part) => part.trim());
       for (const part of conditionParts) {
         const conditionMatch = part.match(
@@ -987,9 +1050,9 @@ export default function SqlEditor() {
         };
       }
 
-      // 12. After WHERE column operator, suggest values (including after AND)
+      // 12. After WHERE column operator, suggest values (including after AND/OR)
       const valuePattern =
-        /from\s+power_rangers\s+where\s+(?:.*?\s+and\s+)?(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
+        /from\s+power_rangers\s+where\s+(?:.*?\s+(?:and|or)\s+)?(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
       if (valuePattern.test(docText)) {
         const match = docText.match(valuePattern);
         if (match) {
@@ -1056,7 +1119,7 @@ export default function SqlEditor() {
         }
       }
 
-      // 13. After a complete condition, suggest AND
+      // 13. After a complete condition, suggest AND or OR
       if (
         /from\s+power_rangers\s+where\s+.*?(?:\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)|\w+\s*BETWEEN\s*('[^']*'|[^' ]\w*)\s*AND\s*('[^']*'|[^' ]\w*)|\w+\s*(IS NULL|IS NOT NULL))\s*$/i.test(
           docText
@@ -1069,16 +1132,22 @@ export default function SqlEditor() {
               label: "AND",
               type: "keyword",
               apply: " AND ",
-              detail: "Combine with another condition",
+              detail: "Combine with another condition (all must be true)",
+            },
+            {
+              label: "OR",
+              type: "keyword",
+              apply: " OR ",
+              detail: "Combine with another condition (any can be true)",
             },
           ],
         };
       }
 
-      // 14. After AND, suggest remaining columns
-      if (/from\s+power_rangers\s+where\s+.*?\s+and\s*$/i.test(docText)) {
+      // 14. After AND or OR, suggest remaining columns
+      if (/from\s+power_rangers\s+where\s+.*?\s+(and|or)\s*$/i.test(docText)) {
         const whereClause =
-          docText.match(/where\s+(.+?)\s+and\s*$/i)?.[1] || "";
+          docText.match(/where\s+(.+?)\s+(?:and|or)\s*$/i)?.[1] || "";
         const usedColumns = getUsedColumnsInWhere(whereClause);
         return {
           from: word?.from ?? cursorPos,
