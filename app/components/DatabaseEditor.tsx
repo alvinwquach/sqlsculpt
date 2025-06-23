@@ -364,15 +364,15 @@ export default function SqlEditor() {
       }
 
       const selectDistinctMatch = query.match(
-        /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
+        /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectMatch = query.match(
-        /^select\s+(?!distinct)(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?\s*;?$/i
+        /^select\s+(?!distinct)(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
 
       if (!selectMatch && !selectDistinctMatch) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
         );
         setTooltip(null);
         return true;
@@ -382,6 +382,14 @@ export default function SqlEditor() {
       const match = selectDistinctMatch ?? selectMatch;
       const rawFieldsWithAliases = match![1].split(",").map((f) => f.trim());
       const whereClause = match![2]?.trim();
+      const limitValue = match![3] ? parseInt(match![3], 10) : undefined;
+
+      if (limitValue !== undefined && (isNaN(limitValue) || limitValue <= 0)) {
+        setResult("Error: LIMIT must be a positive integer");
+        setTooltip(null);
+        return false;
+      }
+
       const fields: string[] = [];
       const aliases: { [key in keyof PowerRanger]?: string } = {};
 
@@ -604,6 +612,11 @@ export default function SqlEditor() {
         }
       } else {
         setTooltip(null);
+      }
+
+      // Apply LIMIT if specified
+      if (limitValue !== undefined) {
+        resultData = resultData.slice(0, limitValue);
       }
 
       try {
@@ -968,6 +981,12 @@ export default function SqlEditor() {
               apply: "WHERE ",
               detail: "Filter rows",
             },
+            {
+              label: "LIMIT",
+              type: "keyword",
+              apply: "LIMIT ",
+              detail: "Limit number of rows",
+            },
           ],
         };
       }
@@ -1136,6 +1155,12 @@ export default function SqlEditor() {
               apply: " OR ",
               detail: "Combine with another condition (any can be true)",
             },
+            {
+              label: "LIMIT",
+              type: "keyword",
+              apply: " LIMIT ",
+              detail: "Limit number of rows",
+            },
           ],
         };
       }
@@ -1151,6 +1176,42 @@ export default function SqlEditor() {
         };
       }
 
+      // 15. Suggest number after LIMIT
+      if (
+        /from\s+power_rangers\s+(?:where\s+.*?\s+)?limit\s*$/i.test(docText)
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",
+          ].map((num) => ({
+            label: num,
+            type: "value",
+            apply: num,
+            detail: `Limit to ${num} ${num === "1" ? "row" : "rows"}`,
+            boost: -Number(num),
+          })),
+        };
+      }
       return null;
     };
 
