@@ -54,7 +54,8 @@ type QueryResult =
   | { count: number }
   | { sum: number }
   | { max: number }
-  | { min: number };
+  | { min: number }
+  | { avg: number };
 
 export const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
@@ -382,6 +383,9 @@ export default function SqlEditor() {
       const minMatch = query.match(
         /^select\s+min\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
+      const avgMatch = query.match(
+        /^select\s+avg\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+      );
       const selectDistinctMatch = query.match(
         /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
@@ -395,10 +399,11 @@ export default function SqlEditor() {
         !countMatch &&
         !sumMatch &&
         !maxMatch &&
-        !minMatch
+        !minMatch &&
+        !avgMatch
       ) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT AVG(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
         );
         setTooltip(null);
         return true;
@@ -756,6 +761,186 @@ export default function SqlEditor() {
         }
 
         const resultData = [{ [alias]: min }];
+
+        if (limitValue !== undefined) {
+          const limit = parseInt(limitValue, 10);
+          if (isNaN(limit) || limit <= 0) {
+            setResult("Error: LIMIT must be a positive integer");
+            setTooltip(null);
+            return false;
+          }
+          resultData.splice(limit);
+        }
+
+        try {
+          setResult(JSON.stringify(resultData, null, 2));
+        } catch {
+          setResult("Error: Failed to generate valid JSON output");
+          setTooltip(null);
+          return false;
+        }
+        setTooltip(null);
+        return true;
+      }
+
+      if (avgMatch) {
+        const [, avgColumn, alias = "avg", whereClause, limitValue] = avgMatch;
+        let filteredData = powerRangersData.data;
+
+        const columnDef = powerRangersData.columns.find(
+          (col) => col.name.toLowerCase() === avgColumn.toLowerCase()
+        );
+        if (!columnDef) {
+          setResult(`Error: Invalid column in AVG: ${avgColumn}`);
+          setTooltip(null);
+          return false;
+        }
+        if (columnDef.type !== "integer") {
+          setResult(
+            `Error: AVG can only be applied to numeric columns: ${avgColumn}`
+          );
+          setTooltip(null);
+          return false;
+        }
+
+        if (whereClause) {
+          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
+          const conditions: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            join?: "AND" | "OR";
+          }> = [];
+          const joinOperators: string[] = [];
+
+          for (let i = 0; i < conditionParts.length; i++) {
+            if (i % 2 === 0) {
+              const part = conditionParts[i].trim();
+              const betweenMatch = part.match(
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+              );
+              if (betweenMatch) {
+                const [, column, value1, value2] = betweenMatch;
+                conditions.push({
+                  column,
+                  operator: "BETWEEN",
+                  value1,
+                  value2,
+                });
+              } else {
+                const conditionMatch = part.match(
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+                );
+                if (!conditionMatch) {
+                  setResult(
+                    `Error: Invalid condition in WHERE clause: ${part}`
+                  );
+                  setTooltip(null);
+                  return false;
+                }
+                const [, column, operator, value1] = conditionMatch;
+                conditions.push({ column, operator, value1 });
+              }
+            } else {
+              joinOperators.push(conditionParts[i].toUpperCase());
+            }
+          }
+
+          for (let i = 0; i < conditions.length - 1; i++) {
+            conditions[i].join = joinOperators[i] as "AND" | "OR";
+          }
+
+          for (const condition of conditions) {
+            const { column } = condition;
+            if (
+              !powerRangersData.columns.some(
+                (col) => col.name.toLowerCase() === column.toLowerCase()
+              )
+            ) {
+              setResult(`Error: Invalid column in WHERE clause: ${column}`);
+              setTooltip(null);
+              return false;
+            }
+          }
+
+          filteredData = filteredData.filter((row) => {
+            let result = true;
+            let currentGroup: Array<{
+              column: string;
+              operator: string;
+              value1?: string;
+              value2?: string;
+            }> = [];
+            let lastJoin: "AND" | "OR" | null = null;
+
+            for (const condition of conditions) {
+              const { column, operator, value1, value2, join } = condition;
+              currentGroup.push({ column, operator, value1, value2 });
+
+              if (
+                join ||
+                conditions.indexOf(condition) === conditions.length - 1
+              ) {
+                const groupResult = currentGroup.every((cond) => {
+                  if (
+                    ["IS NULL", "IS NOT NULL"].includes(
+                      cond.operator.toUpperCase()
+                    )
+                  ) {
+                    return evaluateNullCondition(
+                      row,
+                      cond.column,
+                      cond.operator
+                    );
+                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                    if (!cond.value1 || !cond.value2) return false;
+                    return evaluateBetweenCondition(
+                      row,
+                      cond.column,
+                      cond.value1,
+                      cond.value2
+                    );
+                  } else {
+                    if (!cond.value1) return false;
+                    return evaluateCondition(
+                      row,
+                      cond.column,
+                      cond.operator,
+                      cond.value1
+                    );
+                  }
+                });
+
+                if (lastJoin === "OR") {
+                  result = result || groupResult;
+                } else {
+                  result = result && groupResult;
+                }
+
+                currentGroup = [];
+                lastJoin = join || null;
+              }
+            }
+            return result;
+          });
+        }
+
+        const values = filteredData
+          .map((row) => Number(row[avgColumn as keyof PowerRanger]))
+          .filter((value) => !isNaN(value));
+        const avg =
+          values.length > 0
+            ? values.reduce((acc, val) => acc + val, 0) / values.length
+            : null;
+
+        if (avg === null) {
+          setResult(`Error: No valid values found for AVG(${avgColumn})`);
+          setTooltip(null);
+          return false;
+        }
+
+        const resultData = [{ [alias]: avg }];
 
         if (limitValue !== undefined) {
           const limit = parseInt(limitValue, 10);
@@ -1591,7 +1776,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), DISTINCT, and COUNT
+      // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), or AVG(column) DISTINCT, and COUNT
       if (/^select\s*$/i.test(docText)) {
         const options = getColumnOptions(alreadySelectedFields);
         options.unshift(
@@ -1637,8 +1822,17 @@ export default function SqlEditor() {
               type: "function",
               apply: `MIN(${col.name})`,
               detail: `Minimum value in ${col.name}`,
+            })),
+          ...powerRangersData.columns
+            .filter((col) => col.type === "integer")
+            .map((col) => ({
+              label: `AVG(${col.name})`,
+              type: "function",
+              apply: `AVG(${col.name})`,
+              detail: `Average value in ${col.name}`,
             }))
         );
+
         return { from: word?.from ?? cursorPos, options };
       }
 
@@ -1662,9 +1856,9 @@ export default function SqlEditor() {
         };
       }
 
-      // 6. After a field, COUNT(*), COUNT(column), SUM(column), MAX(column), or MIN(column) (with or without alias), suggest AS or FROM
+      // 6. After a field, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), or AVG(column) (with or without alias), suggest AS or FROM
       if (
-        /^select\s+(?:distinct\s+)?(?:[\w\s,'*]+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|sum\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|max\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|min\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)$/i.test(
+        /^select\s+(?:distinct\s+)?(?:[\w\s,'*]+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|sum\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|max\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|min\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|avg\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)$/i.test(
           docText
         ) &&
         !docText.includes("from") &&
@@ -1677,7 +1871,7 @@ export default function SqlEditor() {
           const lastField = fieldsBeforeCursor.split(",").slice(-1)[0].trim();
           const lastFieldName = lastField
             .replace(/\s+as\s+'.*?'$/i, "")
-            .replace(/^(count|sum|max|min)\s*\(([*]|\w+)\)/i, "$2")
+            .replace(/^(count|sum|max|min|avg)\s*\(([*]|\w+)\)/i, "$2")
             .trim()
             .toLowerCase();
           const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
@@ -1693,6 +1887,9 @@ export default function SqlEditor() {
           const isMin = /^min\s*\([\w*]+\)$/i.test(
             lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
           );
+          const isAvg = /^avg\s*\([\w*]+\)$/i.test(
+            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
+          );
 
           if (
             !hasAlias &&
@@ -1703,10 +1900,16 @@ export default function SqlEditor() {
               isCount ||
               isSum ||
               isMax ||
-              isMin)
+              isMin ||
+              isAvg)
           ) {
             const formattedAlias =
-              lastFieldName !== "*" && !isCount && !isSum && !isMax && !isMin
+              lastFieldName !== "*" &&
+              !isCount &&
+              !isSum &&
+              !isMax &&
+              !isMin &&
+              !isAvg
                 ? formatColumnName(lastFieldName)
                 : isCount
                 ? "count"
@@ -1716,6 +1919,8 @@ export default function SqlEditor() {
                 ? "max"
                 : isMin
                 ? "min"
+                : isAvg
+                ? "avg"
                 : undefined;
             const options = [
               {
