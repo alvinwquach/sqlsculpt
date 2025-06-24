@@ -47,7 +47,11 @@ interface ShowTablesResult {
   table_name: string;
 }
 
-type QueryResult = Partial<PowerRanger> | DescribeResult | ShowTablesResult;
+type QueryResult =
+  | Partial<PowerRanger>
+  | DescribeResult
+  | ShowTablesResult
+  | { count: number };
 
 export const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
@@ -176,7 +180,7 @@ function ViewToggle({ onViewModeChange }: ViewToggleProps) {
       </button>
       <button
         onClick={() => handleModeChange("table")}
-        className={`px-3 py-2 rounded-r-md bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-green-500 ${
+        className={`px-3 py-2 rounded-r-md bg-slate-800 border-slate-700 border text-white focus:outline-none focus:ring-2 focus:ring-green-500 ${
           viewMode === "table" ? "border-green-500" : ""
         }`}
       >
@@ -193,7 +197,7 @@ interface TooltipProps {
 
 function Tooltip({ message }: TooltipProps) {
   return (
-    <div className="absolute top-0 left-1/2 transform -translate-x-1/2 mt-2 bg-gray-700 text-white text-xs rounded px-3 py-1.5 shadow-lg animate-in fade-in slide-in-from-top-2">
+    <div className="absolute top-0 left-1/2 transform -translate-x-1/2 mt-2 bg-gray-700 text-white text-xs rounded-md px-3 py-1.5 shadow-lg animate-in fade-in slide-in-from-top-2">
       {message}
     </div>
   );
@@ -201,9 +205,9 @@ function Tooltip({ message }: TooltipProps) {
 
 export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>("");
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
-  const [tooltip, setTooltip] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<string | null>("");
 
   const uniqueSeasons = Array.from(
     new Set(powerRangersData.data.map((row) => row.season))
@@ -363,26 +367,200 @@ export default function SqlEditor() {
         return true;
       }
 
+      const countMatch = query.match(
+        /^select\s+count\s*\(([*]|\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+      );
       const selectDistinctMatch = query.match(
         /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectMatch = query.match(
-        /^select\s+(?!distinct)(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+(?!distinct|count\s*\()(.*?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
 
-      if (!selectMatch && !selectDistinctMatch) {
+      if (!selectMatch && !selectDistinctMatch && !countMatch) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
         );
         setTooltip(null);
         return true;
       }
 
+      if (countMatch) {
+        const [, countArg, alias = "count", whereClause, limitValue] =
+          countMatch;
+        let filteredData = powerRangersData.data;
+
+        if (whereClause) {
+          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
+          const conditions: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            join?: "AND" | "OR";
+          }> = [];
+          const joinOperators: string[] = [];
+
+          for (let i = 0; i < conditionParts.length; i++) {
+            if (i % 2 === 0) {
+              const part = conditionParts[i].trim();
+              const betweenMatch = part.match(
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+              );
+              if (betweenMatch) {
+                const [, column, value1, value2] = betweenMatch;
+                conditions.push({
+                  column,
+                  operator: "BETWEEN",
+                  value1,
+                  value2,
+                });
+              } else {
+                const conditionMatch = part.match(
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+                );
+                if (!conditionMatch) {
+                  setResult(
+                    `Error: Invalid condition in WHERE clause: ${part}`
+                  );
+                  setTooltip(null);
+                  return false;
+                }
+                const [, column, operator, value1] = conditionMatch;
+                conditions.push({ column, operator, value1 });
+              }
+            } else {
+              joinOperators.push(conditionParts[i].toUpperCase());
+            }
+          }
+
+          for (let i = 0; i < conditions.length - 1; i++) {
+            conditions[i].join = joinOperators[i] as "AND" | "OR";
+          }
+
+          for (const condition of conditions) {
+            const { column } = condition;
+            if (
+              !powerRangersData.columns.some(
+                (col) => col.name.toLowerCase() === column.toLowerCase()
+              )
+            ) {
+              setResult(`Error: Invalid column in WHERE clause: ${column}`);
+              setTooltip(null);
+              return false;
+            }
+          }
+
+          filteredData = filteredData.filter((row) => {
+            let result = true;
+            let currentGroup: Array<{
+              column: string;
+              operator: string;
+              value1?: string;
+              value2?: string;
+            }> = [];
+            let lastJoin: "AND" | "OR" | null = null;
+
+            for (const condition of conditions) {
+              const { column, operator, value1, value2, join } = condition;
+              currentGroup.push({ column, operator, value1, value2 });
+
+              if (
+                join ||
+                conditions.indexOf(condition) === conditions.length - 1
+              ) {
+                const groupResult = currentGroup.every((cond) => {
+                  if (
+                    ["IS NULL", "IS NOT NULL"].includes(
+                      cond.operator.toUpperCase()
+                    )
+                  ) {
+                    return evaluateNullCondition(
+                      row,
+                      cond.column,
+                      cond.operator
+                    );
+                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                    if (!cond.value1 || !cond.value2) return false;
+                    return evaluateBetweenCondition(
+                      row,
+                      cond.column,
+                      cond.value1,
+                      cond.value2
+                    );
+                  } else {
+                    if (!cond.value1) return false;
+                    return evaluateCondition(
+                      row,
+                      cond.column,
+                      cond.operator,
+                      cond.value1
+                    );
+                  }
+                });
+
+                if (lastJoin === "OR") {
+                  result = result || groupResult;
+                } else {
+                  result = result && groupResult;
+                }
+
+                currentGroup = [];
+                lastJoin = join || null;
+              }
+            }
+            return result;
+          });
+        }
+
+        let count: number;
+        if (countArg === "*") {
+          count = filteredData.length;
+        } else {
+          if (
+            !powerRangersData.columns.some(
+              (col) => col.name.toLowerCase() === countArg.toLowerCase()
+            )
+          ) {
+            setResult(`Error: Invalid column in COUNT: ${countArg}`);
+            setTooltip(null);
+            return false;
+          }
+          count = filteredData.filter(
+            (row) =>
+              row[countArg as keyof PowerRanger] !== null &&
+              row[countArg as keyof PowerRanger] !== undefined
+          ).length;
+        }
+
+        const resultData = [{ [alias]: count }];
+
+        if (limitValue !== undefined) {
+          const limit = parseInt(limitValue, 10);
+          if (isNaN(limit) || limit <= 0) {
+            setResult("Error: LIMIT must be a positive integer");
+            setTooltip(null);
+            return false;
+          }
+          resultData.splice(limit);
+        }
+
+        try {
+          setResult(JSON.stringify(resultData, null, 2));
+        } catch {
+          setResult("Error: Failed to generate valid JSON output");
+          setTooltip(null);
+          return false;
+        }
+        setTooltip(null);
+        return true;
+      }
+
       const isDistinct = !!selectDistinctMatch;
-      const match = selectDistinctMatch ?? selectMatch;
-      const rawFieldsWithAliases = match![1].split(",").map((f) => f.trim());
-      const whereClause = match![2]?.trim();
-      const limitValue = match![3] ? parseInt(match![3], 10) : undefined;
+      const match = selectDistinctMatch ?? selectMatch!;
+      const rawFieldsWithAliases = match[1].split(",").map((f) => f.trim());
+      const whereClause = match[2]?.trim();
+      const limitValue = match[3] ? parseInt(match[3], 10) : undefined;
 
       if (limitValue !== undefined && (isNaN(limitValue) || limitValue <= 0)) {
         setResult("Error: LIMIT must be a positive integer");
@@ -475,7 +653,7 @@ export default function SqlEditor() {
         }
 
         for (const condition of conditions) {
-          const { column, operator, value1, value2 } = condition;
+          const { column } = condition;
           if (
             !powerRangersData.columns.some(
               (col) => col.name.toLowerCase() === column.toLowerCase()
@@ -486,7 +664,10 @@ export default function SqlEditor() {
             return false;
           }
 
-          if (operator.toUpperCase() === "BETWEEN" && (!value1 || !value2)) {
+          if (
+            condition.operator.toUpperCase() === "BETWEEN" &&
+            (!condition.value1 || !condition.value2)
+          ) {
             setResult("Error: BETWEEN requires two values");
             setTooltip(null);
             return false;
@@ -494,11 +675,13 @@ export default function SqlEditor() {
 
           if (
             !["IS NULL", "IS NOT NULL", "BETWEEN"].includes(
-              operator.toUpperCase()
+              condition.operator.toUpperCase()
             ) &&
-            !value1
+            !condition.value1
           ) {
-            setResult(`Error: Missing value for operator ${operator}`);
+            setResult(
+              `Error: Missing value for operator ${condition.operator}`
+            );
             setTooltip(null);
             return false;
           }
@@ -516,11 +699,8 @@ export default function SqlEditor() {
 
           for (const condition of conditions) {
             const { column, operator, value1, value2, join } = condition;
-
-            // Add condition to the current group
             currentGroup.push({ column, operator, value1, value2 });
 
-            // If there's a join operator or it's the last condition, evaluate the group
             if (
               join ||
               conditions.indexOf(condition) === conditions.length - 1
@@ -551,19 +731,16 @@ export default function SqlEditor() {
                 }
               });
 
-              // For OR, include rows if any condition is true; otherwise, all must be true (AND)
               if (lastJoin === "OR") {
                 result = result || groupResult;
               } else {
                 result = result && groupResult;
               }
 
-              // Reset group for the next set of conditions
               currentGroup = [];
               lastJoin = join || null;
             }
           }
-
           return result;
         });
       }
@@ -614,7 +791,6 @@ export default function SqlEditor() {
         setTooltip(null);
       }
 
-      // Apply LIMIT if specified
       if (limitValue !== undefined) {
         resultData = resultData.slice(0, limitValue);
       }
@@ -795,15 +971,19 @@ export default function SqlEditor() {
 
       const selectMatch = fullDocText
         .substring(0, cursorPos)
-        .match(/^select\s+(?:distinct\s+)?(.+?)(?:\s+from|$)/i);
-      const alreadySelectedFields = selectMatch
-        ? selectMatch[1].split(",").map((f) =>
-            f
-              .trim()
-              .replace(/\s+as\s+'.*?'$/i, "")
-              .toLowerCase()
-          )
-        : [];
+        .match(
+          /^select\s+(?:distinct\s+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)?(.+?)?(?:\s+from|$)/i
+        );
+      const alreadySelectedFields =
+        selectMatch && selectMatch[1]
+          ? selectMatch[1].split(",").map((f) =>
+              f
+                .trim()
+                .replace(/\s+as\s+'.*?'$/i, "")
+                .replace(/^count\s*\(([*]|\w+)\)/i, "$1")
+                .toLowerCase()
+            )
+          : [];
 
       // 1. Suggest SQL keywords when editor is empty or typing a keyword
       if (/^\s*$|^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)) {
@@ -832,7 +1012,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 2. After DESCRIBE suggest the table
+      // 2. After DESCRIBE, suggest the table
       if (/^describe\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -847,7 +1027,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 3. Suggest all columns, *, or DISTINCT after SELECT
+      // 3. After SELECT, suggest columns, *, DISTINCT, and COUNT
       if (/^select\s*$/i.test(docText)) {
         const options = getColumnOptions(alreadySelectedFields);
         options.unshift(
@@ -857,7 +1037,19 @@ export default function SqlEditor() {
             type: "keyword",
             apply: "DISTINCT ",
             detail: "Select unique values",
-          }
+          },
+          {
+            label: "COUNT(*)",
+            type: "function",
+            apply: "COUNT(*)",
+            detail: "Count all rows",
+          },
+          ...powerRangersData.columns.map((col) => ({
+            label: `COUNT(${col.name})`,
+            type: "function",
+            apply: `COUNT(${col.name})`,
+            detail: `Count non-null values in ${col.name}`,
+          }))
         );
         return { from: word?.from ?? cursorPos, options };
       }
@@ -882,9 +1074,11 @@ export default function SqlEditor() {
         };
       }
 
-      // 6. If a field is selected and alias is not yet provided, suggest AS or FROM
+      // 6. After a field, COUNT(*), or COUNT(column) (with or without alias), suggest AS or FROM
       if (
-        /^select\s+(?:distinct\s+)?[\s\w,'*]+$/i.test(docText) &&
+        /^select\s+(?:distinct\s+)?(?:[\w\s,'*]+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)$/i.test(
+          docText
+        ) &&
         !docText.includes("from") &&
         !/,\s*$/.test(docText.substring(0, cursorPos))
       ) {
@@ -895,20 +1089,27 @@ export default function SqlEditor() {
           const lastField = fieldsBeforeCursor.split(",").slice(-1)[0].trim();
           const lastFieldName = lastField
             .replace(/\s+as\s+'.*?'$/i, "")
+            .replace(/^count\s*\(([*]|\w+)\)/i, "$1")
             .trim()
             .toLowerCase();
           const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
+          const isCount = /^count\s*\([\w*]+\)$/i.test(
+            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
+          );
 
           if (
             !hasAlias &&
             (lastFieldName === "*" ||
               powerRangersData.columns.some(
                 (col) => col.name.toLowerCase() === lastFieldName
-              ))
+              ) ||
+              isCount)
           ) {
             const formattedAlias =
-              lastFieldName !== "*"
+              lastFieldName !== "*" && !isCount
                 ? formatColumnName(lastFieldName)
+                : isCount
+                ? "count"
                 : undefined;
             const options = [
               {
@@ -970,7 +1171,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 9. After FROM power_rangers, suggest WHERE
+      // 9. After FROM power_rangers, suggest WHERE or LIMIT
       if (/from\s+power_rangers\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
@@ -1065,7 +1266,7 @@ export default function SqlEditor() {
         };
       }
 
-      // 12. After WHERE column operator, suggest values (including after AND/OR)
+      // 12. After WHERE column operator, suggest values
       const valuePattern =
         /from\s+power_rangers\s+where\s+(?:.*?\s+(?:and|or)\s+)?(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
       if (valuePattern.test(docText)) {
@@ -1134,7 +1335,7 @@ export default function SqlEditor() {
         }
       }
 
-      // 13. After a complete condition, suggest AND or OR
+      // 13. After a complete condition, suggest AND, OR, or LIMIT
       if (
         /from\s+power_rangers\s+where\s+.*?(?:\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)|\w+\s*BETWEEN\s*('[^']*'|[^' ]\w*)\s*AND\s*('[^']*'|[^' ]\w*)|\w+\s*(IS NULL|IS NOT NULL))\s*$/i.test(
           docText
