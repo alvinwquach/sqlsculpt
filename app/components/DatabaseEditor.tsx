@@ -372,31 +372,28 @@ export default function SqlEditor() {
       }
 
       const sumMatch = query.match(
-        /^select\s+sum\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+sum\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const countMatch = query.match(
-        /^select\s+count\s*\(([*]|\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+count\s*\(([*]|\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const maxMatch = query.match(
-        /^select\s+max\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+max\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const minMatch = query.match(
-        /^select\s+min\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+min\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const avgMatch = query.match(
-        /^select\s+avg\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+avg\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
-      // const roundMatch = query.match(
-      //   /^select\s+round\s*\((\w+),\s*(\d+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
-      // );
       const roundMatch = query.match(
-        /^select\s+round\s*\((\w+),\s*(\d+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+round\s*\((\w+),\s*(\d+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectDistinctMatch = query.match(
-        /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectMatch = query.match(
-        /^select\s+(?!distinct|count\s*\(|sum\s*\(|max\s*\(|min\s*\(|avg\s*\(|round\s*\()(.*?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+(?!distinct|count\s*\(|sum\s*\(|max\s*\(|min\s*\(|avg\s*\(|round\s*\()(.*?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
 
       if (
@@ -491,6 +488,28 @@ export default function SqlEditor() {
               )
             ) {
               setResult(`Error: Invalid column in WHERE clause: ${column}`);
+              setTooltip(null);
+              return false;
+            }
+
+            if (
+              condition.operator.toUpperCase() === "BETWEEN" &&
+              (!condition.value1 || !condition.value2)
+            ) {
+              setResult("Error: BETWEEN requires two values");
+              setTooltip(null);
+              return false;
+            }
+
+            if (
+              !["IS NULL", "IS NOT NULL", "BETWEEN"].includes(
+                condition.operator.toUpperCase()
+              ) &&
+              !condition.value1
+            ) {
+              setResult(
+                `Error: Missing value for operator ${condition.operator}`
+              );
               setTooltip(null);
               return false;
             }
@@ -1501,7 +1520,9 @@ export default function SqlEditor() {
       const match = selectDistinctMatch ?? selectMatch!;
       const rawFieldsWithAliases = match[1].split(",").map((f) => f.trim());
       const whereClause = match[2]?.trim();
-      const limitValue = match[3] ? parseInt(match[3], 10) : undefined;
+      const orderByColumn = match[3];
+      const orderByDirection = match[4]?.toUpperCase() || "ASC";
+      const limitValue = match[5] ? parseInt(match[5], 10) : undefined;
 
       if (limitValue !== undefined && (isNaN(limitValue) || limitValue <= 0)) {
         setResult("Error: LIMIT must be a positive integer");
@@ -1732,6 +1753,38 @@ export default function SqlEditor() {
         setTooltip(null);
       }
 
+      if (orderByColumn) {
+        if (
+          !powerRangersData.columns.some(
+            (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
+          )
+        ) {
+          setResult(`Error: Invalid column in ORDER BY: ${orderByColumn}`);
+          setTooltip(null);
+          return false;
+        }
+
+        const columnType = powerRangersData.columns.find(
+          (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
+        )?.type;
+
+        resultData.sort((a, b) => {
+          const aValue = a[orderByColumn as keyof PowerRanger] ?? "";
+          const bValue = b[orderByColumn as keyof PowerRanger] ?? "";
+          let comparison = 0;
+
+          if (columnType === "integer") {
+            const aNum = Number(aValue);
+            const bNum = Number(bValue);
+            comparison = aNum - bNum;
+          } else {
+            comparison = String(aValue).localeCompare(String(bValue));
+          }
+
+          return orderByDirection === "DESC" ? -comparison : comparison;
+        });
+      }
+
       if (limitValue !== undefined) {
         resultData = resultData.slice(0, limitValue);
       }
@@ -1861,7 +1914,6 @@ export default function SqlEditor() {
           }
         }
       });
-
       // 8. Generic patterns based on column
       patterns.push(`'%${column.slice(0, 1).toUpperCase()}%'`);
       patterns.push(`'${column.slice(0, 1).toUpperCase()}%'`);
@@ -2061,7 +2113,6 @@ export default function SqlEditor() {
           /^select\s+(?:distinct\s+)?(.+?)\s*$/i
         )?.[1];
         if (fieldsBeforeCursor) {
-          // Split fields using regex to handle parentheses
           const fields = fieldsBeforeCursor
             .split(/,(?=(?:[^)]|[^(]*\([^)]*\))*$)/g)
             .map((field) => field.trim());
@@ -2181,7 +2232,6 @@ export default function SqlEditor() {
             ];
         return { from: word?.from ?? cursorPos, options };
       }
-
       // 8. After FROM, suggest power_rangers
       if (/from\s*$/i.test(docText)) {
         return {
@@ -2208,6 +2258,12 @@ export default function SqlEditor() {
               detail: "Filter rows",
             },
             {
+              label: "ORDER BY",
+              type: "keyword",
+              apply: "ORDER BY ",
+              detail: "Sort results",
+            },
+            {
               label: "LIMIT",
               type: "keyword",
               apply: "LIMIT ",
@@ -2217,8 +2273,40 @@ export default function SqlEditor() {
         };
       }
       // 10. After WHERE, suggest columns
-      if (/from\s+power_rangers\s+where\s*$/i.test(docText)) {
-        return { from: word?.from ?? cursorPos, options: getColumnOptions([]) };
+      if (
+        /from\s+power_rangers\s+where\s+.*?(?:\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)|\w+\s*BETWEEN\s*('[^']*'|[^' ]\w*)\s*AND\s*('[^']*'|[^' ]\w*)|\w+\s*(IS NULL|IS NOT NULL))\s*$/i.test(
+          docText
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "AND",
+              type: "keyword",
+              apply: " AND ",
+              detail: "Combine with another condition (all must be true)",
+            },
+            {
+              label: "OR",
+              type: "keyword",
+              apply: " OR ",
+              detail: "Combine with another condition (any can be true)",
+            },
+            {
+              label: "ORDER BY",
+              type: "keyword",
+              apply: " ORDER BY ",
+              detail: "Sort results",
+            },
+            {
+              label: "LIMIT",
+              type: "keyword",
+              apply: " LIMIT ",
+              detail: "Limit number of rows",
+            },
+          ],
+        };
       }
       // 11. After WHERE column, suggest operators
       if (
@@ -2386,7 +2474,6 @@ export default function SqlEditor() {
           ],
         };
       }
-
       // 14. After AND or OR, suggest remaining columns
       if (/from\s+power_rangers\s+where\s+.*?\s+(and|or)\s*$/i.test(docText)) {
         const whereClause =
@@ -2445,6 +2532,48 @@ export default function SqlEditor() {
           })),
         };
       }
+      // 17. After ORDER BY, suggest columns
+      if (/order\s+by\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: getColumnOptions([]),
+        };
+      }
+      // 18.  After ORDER BY column, suggest ASC, DESC, or LIMIT
+      if (/order\s+by\s+\w+\s*$/i.test(docText)) {
+        const orderByColumn = docText.match(/order\s+by\s+(\w+)\s*$/i)?.[1];
+        if (
+          orderByColumn &&
+          powerRangersData.columns.some(
+            (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
+          )
+        ) {
+          return {
+            from: word?.from ?? cursorPos,
+            options: [
+              {
+                label: "ASC",
+                type: "keyword",
+                apply: " ASC ",
+                detail: "Sort in ascending order",
+              },
+              {
+                label: "DESC",
+                type: "keyword",
+                apply: " DESC ",
+                detail: "Sort in descending order",
+              },
+              {
+                label: "LIMIT",
+                type: "keyword",
+                apply: " LIMIT ",
+                detail: "Limit number of rows",
+              },
+            ],
+          };
+        }
+      }
+
       return null;
     };
 
