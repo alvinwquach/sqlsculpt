@@ -52,7 +52,9 @@ type QueryResult =
   | DescribeResult
   | ShowTablesResult
   | { count: number }
-  | { sum: number };
+  | { sum: number }
+  | { max: number }
+  | { min: number };
 
 export const powerRangersData: PowerRangersData = {
   tableName: "power_rangers",
@@ -374,17 +376,404 @@ export default function SqlEditor() {
       const countMatch = query.match(
         /^select\s+count\s*\(([*]|\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
+      const maxMatch = query.match(
+        /^select\s+max\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+      );
+      const minMatch = query.match(
+        /^select\s+min\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+      );
       const selectDistinctMatch = query.match(
         /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectMatch = query.match(
-        /^select\s+(?!distinct|count\s*\(|sum\s*\()(.*?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+(?!distinct|count\s*\(|sum\s*\(|max\s*\(|min\s*\()(.*?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
 
-      if (!selectMatch && !selectDistinctMatch && !countMatch && !sumMatch) {
+      if (
+        !selectMatch &&
+        !selectDistinctMatch &&
+        !countMatch &&
+        !sumMatch &&
+        !maxMatch &&
+        !minMatch
+      ) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
         );
+        setTooltip(null);
+        return true;
+      }
+
+      if (maxMatch) {
+        const [, maxColumn, alias = "max", whereClause, limitValue] = maxMatch;
+        let filteredData = powerRangersData.data;
+
+        const columnDef = powerRangersData.columns.find(
+          (col) => col.name.toLowerCase() === maxColumn.toLowerCase()
+        );
+        if (!columnDef) {
+          setResult(`Error: Invalid column in MAX: ${maxColumn}`);
+          setTooltip(null);
+          return false;
+        }
+        if (columnDef.type !== "integer" && columnDef.type !== "date") {
+          setResult(
+            `Error: MAX can only be applied to numeric or date columns: ${maxColumn}`
+          );
+          setTooltip(null);
+          return false;
+        }
+
+        if (whereClause) {
+          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
+          const conditions: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            join?: "AND" | "OR";
+          }> = [];
+          const joinOperators: string[] = [];
+
+          for (let i = 0; i < conditionParts.length; i++) {
+            if (i % 2 === 0) {
+              const part = conditionParts[i].trim();
+              const betweenMatch = part.match(
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+              );
+              if (betweenMatch) {
+                const [, column, value1, value2] = betweenMatch;
+                conditions.push({
+                  column,
+                  operator: "BETWEEN",
+                  value1,
+                  value2,
+                });
+              } else {
+                const conditionMatch = part.match(
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+                );
+                if (!conditionMatch) {
+                  setResult(
+                    `Error: Invalid condition in WHERE clause: ${part}`
+                  );
+                  setTooltip(null);
+                  return false;
+                }
+                const [, column, operator, value1] = conditionMatch;
+                conditions.push({ column, operator, value1 });
+              }
+            } else {
+              joinOperators.push(conditionParts[i].toUpperCase());
+            }
+          }
+
+          for (let i = 0; i < conditions.length - 1; i++) {
+            conditions[i].join = joinOperators[i] as "AND" | "OR";
+          }
+
+          for (const condition of conditions) {
+            const { column } = condition;
+            if (
+              !powerRangersData.columns.some(
+                (col) => col.name.toLowerCase() === column.toLowerCase()
+              )
+            ) {
+              setResult(`Error: Invalid column in WHERE clause: ${column}`);
+              setTooltip(null);
+              return false;
+            }
+          }
+
+          filteredData = filteredData.filter((row) => {
+            let result = true;
+            let currentGroup: Array<{
+              column: string;
+              operator: string;
+              value1?: string;
+              value2?: string;
+            }> = [];
+            let lastJoin: "AND" | "OR" | null = null;
+
+            for (const condition of conditions) {
+              const { column, operator, value1, value2, join } = condition;
+              currentGroup.push({ column, operator, value1, value2 });
+
+              if (
+                join ||
+                conditions.indexOf(condition) === conditions.length - 1
+              ) {
+                const groupResult = currentGroup.every((cond) => {
+                  if (
+                    ["IS NULL", "IS NOT NULL"].includes(
+                      cond.operator.toUpperCase()
+                    )
+                  ) {
+                    return evaluateNullCondition(
+                      row,
+                      cond.column,
+                      cond.operator
+                    );
+                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                    if (!cond.value1 || !cond.value2) return false;
+                    return evaluateBetweenCondition(
+                      row,
+                      cond.column,
+                      cond.value1,
+                      cond.value2
+                    );
+                  } else {
+                    if (!cond.value1) return false;
+                    return evaluateCondition(
+                      row,
+                      cond.column,
+                      cond.operator,
+                      cond.value1
+                    );
+                  }
+                });
+
+                if (lastJoin === "OR") {
+                  result = result || groupResult;
+                } else {
+                  result = result && groupResult;
+                }
+
+                currentGroup = [];
+                lastJoin = join || null;
+              }
+            }
+            return result;
+          });
+        }
+
+        let max: number | string | null = null;
+        if (columnDef.type === "integer") {
+          max = filteredData.reduce((acc, row) => {
+            const value = Number(row[maxColumn as keyof PowerRanger]);
+            return isNaN(value)
+              ? acc
+              : Math.max(acc || Number.NEGATIVE_INFINITY, value);
+          }, null as number | null);
+        } else if (columnDef.type === "date") {
+          max = filteredData.reduce((acc, row) => {
+            const value = String(row[maxColumn as keyof PowerRanger]);
+            return acc === null || value > acc ? value : acc;
+          }, null as string | null);
+        }
+
+        if (max === null) {
+          setResult(`Error: No valid values found for MAX(${maxColumn})`);
+          setTooltip(null);
+          return false;
+        }
+
+        const resultData = [{ [alias]: max }];
+
+        if (limitValue !== undefined) {
+          const limit = parseInt(limitValue, 10);
+          if (isNaN(limit) || limit <= 0) {
+            setResult("Error: LIMIT must be a positive integer");
+            setTooltip(null);
+            return false;
+          }
+          resultData.splice(limit);
+        }
+
+        try {
+          setResult(JSON.stringify(resultData, null, 2));
+        } catch {
+          setResult("Error: Failed to generate valid JSON output");
+          setTooltip(null);
+          return false;
+        }
+        setTooltip(null);
+        return true;
+      }
+
+      if (minMatch) {
+        const [, minColumn, alias = "min", whereClause, limitValue] = minMatch;
+        let filteredData = powerRangersData.data;
+
+        const columnDef = powerRangersData.columns.find(
+          (col) => col.name.toLowerCase() === minColumn.toLowerCase()
+        );
+        if (!columnDef) {
+          setResult(`Error: Invalid column in MIN: ${minColumn}`);
+          setTooltip(null);
+          return false;
+        }
+        if (columnDef.type !== "integer" && columnDef.type !== "date") {
+          setResult(
+            `Error: MIN can only be applied to numeric or date columns: ${minColumn}`
+          );
+          setTooltip(null);
+          return false;
+        }
+
+        if (whereClause) {
+          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
+          const conditions: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            join?: "AND" | "OR";
+          }> = [];
+          const joinOperators: string[] = [];
+
+          for (let i = 0; i < conditionParts.length; i++) {
+            if (i % 2 === 0) {
+              const part = conditionParts[i].trim();
+              const betweenMatch = part.match(
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+              );
+              if (betweenMatch) {
+                const [, column, value1, value2] = betweenMatch;
+                conditions.push({
+                  column,
+                  operator: "BETWEEN",
+                  value1,
+                  value2,
+                });
+              } else {
+                const conditionMatch = part.match(
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+                );
+                if (!conditionMatch) {
+                  setResult(
+                    `Error: Invalid condition in WHERE clause: ${part}`
+                  );
+                  setTooltip(null);
+                  return false;
+                }
+                const [, column, operator, value1] = conditionMatch;
+                conditions.push({ column, operator, value1 });
+              }
+            } else {
+              joinOperators.push(conditionParts[i].toUpperCase());
+            }
+          }
+
+          for (let i = 0; i < conditions.length - 1; i++) {
+            conditions[i].join = joinOperators[i] as "AND" | "OR";
+          }
+
+          for (const condition of conditions) {
+            const { column } = condition;
+            if (
+              !powerRangersData.columns.some(
+                (col) => col.name.toLowerCase() === column.toLowerCase()
+              )
+            ) {
+              setResult(`Error: Invalid column in WHERE clause: ${column}`);
+              setTooltip(null);
+              return false;
+            }
+          }
+
+          filteredData = filteredData.filter((row) => {
+            let result = true;
+            let currentGroup: Array<{
+              column: string;
+              operator: string;
+              value1?: string;
+              value2?: string;
+            }> = [];
+            let lastJoin: "AND" | "OR" | null = null;
+
+            for (const condition of conditions) {
+              const { column, operator, value1, value2, join } = condition;
+              currentGroup.push({ column, operator, value1, value2 });
+
+              if (
+                join ||
+                conditions.indexOf(condition) === conditions.length - 1
+              ) {
+                const groupResult = currentGroup.every((cond) => {
+                  if (
+                    ["IS NULL", "IS NOT NULL"].includes(
+                      cond.operator.toUpperCase()
+                    )
+                  ) {
+                    return evaluateNullCondition(
+                      row,
+                      cond.column,
+                      cond.operator
+                    );
+                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                    if (!cond.value1 || !cond.value2) return false;
+                    return evaluateBetweenCondition(
+                      row,
+                      cond.column,
+                      cond.value1,
+                      cond.value2
+                    );
+                  } else {
+                    if (!cond.value1) return false;
+                    return evaluateCondition(
+                      row,
+                      cond.column,
+                      cond.operator,
+                      cond.value1
+                    );
+                  }
+                });
+
+                if (lastJoin === "OR") {
+                  result = result || groupResult;
+                } else {
+                  result = result && groupResult;
+                }
+
+                currentGroup = [];
+                lastJoin = join || null;
+              }
+            }
+            return result;
+          });
+        }
+
+        let min: number | string | null = null;
+        if (columnDef.type === "integer") {
+          min = filteredData.reduce((acc, row) => {
+            const value = Number(row[minColumn as keyof PowerRanger]);
+            return isNaN(value)
+              ? acc
+              : Math.min(acc || Number.POSITIVE_INFINITY, value);
+          }, null as number | null);
+        } else if (columnDef.type === "date") {
+          min = filteredData.reduce((acc, row) => {
+            const value = String(row[minColumn as keyof PowerRanger]);
+            return acc === null || value < acc ? value : acc;
+          }, null as string | null);
+        }
+
+        if (min === null) {
+          setResult(`Error: No valid values found for MIN(${minColumn})`);
+          setTooltip(null);
+          return false;
+        }
+
+        const resultData = [{ [alias]: min }];
+
+        if (limitValue !== undefined) {
+          const limit = parseInt(limitValue, 10);
+          if (isNaN(limit) || limit <= 0) {
+            setResult("Error: LIMIT must be a positive integer");
+            setTooltip(null);
+            return false;
+          }
+          resultData.splice(limit);
+        }
+
+        try {
+          setResult(JSON.stringify(resultData, null, 2));
+        } catch {
+          setResult("Error: Failed to generate valid JSON output");
+          setTooltip(null);
+          return false;
+        }
         setTooltip(null);
         return true;
       }
@@ -1147,7 +1536,7 @@ export default function SqlEditor() {
       const selectMatch = fullDocText
         .substring(0, cursorPos)
         .match(
-          /^select\s+(?:distinct\s+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|sum\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)?(.+?)?(?:\s+from|$)/i
+          /^select\s+(?:distinct\s+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|sum\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|max\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|min\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)?(.+?)?(?:\s+from|$)/i
         );
       const alreadySelectedFields =
         selectMatch && selectMatch[1]
@@ -1155,7 +1544,7 @@ export default function SqlEditor() {
               f
                 .trim()
                 .replace(/\s+as\s+'.*?'$/i, "")
-                .replace(/^(count|sum)\s*\(([*]|\w+)\)/i, "$2")
+                .replace(/^(count|sum|max|min)\s*\(([*]|\w+)\)/i, "$2")
                 .toLowerCase()
             )
           : [];
@@ -1201,7 +1590,8 @@ export default function SqlEditor() {
           ],
         };
       }
-      // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), or SUM(column) DISTINCT, and COUNT
+
+      // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), DISTINCT, and COUNT
       if (/^select\s*$/i.test(docText)) {
         const options = getColumnOptions(alreadySelectedFields);
         options.unshift(
@@ -1231,6 +1621,22 @@ export default function SqlEditor() {
               type: "function",
               apply: `SUM(${col.name})`,
               detail: `Sum values in ${col.name}`,
+            })),
+          ...powerRangersData.columns
+            .filter((col) => col.type === "integer" || col.type === "date")
+            .map((col) => ({
+              label: `MAX(${col.name})`,
+              type: "function",
+              apply: `MAX(${col.name})`,
+              detail: `Maximum value in ${col.name}`,
+            })),
+          ...powerRangersData.columns
+            .filter((col) => col.type === "integer" || col.type === "date")
+            .map((col) => ({
+              label: `MIN(${col.name})`,
+              type: "function",
+              apply: `MIN(${col.name})`,
+              detail: `Minimum value in ${col.name}`,
             }))
         );
         return { from: word?.from ?? cursorPos, options };
@@ -1256,9 +1662,9 @@ export default function SqlEditor() {
         };
       }
 
-      // 6. After a field, COUNT(*), or COUNT(column), SUM(column) (with or without alias), suggest AS or FROM
+      // 6. After a field, COUNT(*), COUNT(column), SUM(column), MAX(column), or MIN(column) (with or without alias), suggest AS or FROM
       if (
-        /^select\s+(?:distinct\s+)?(?:[\w\s,'*]+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|sum\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)$/i.test(
+        /^select\s+(?:distinct\s+)?(?:[\w\s,'*]+|count\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|sum\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|max\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?|min\s*\([\w*]+\)\s*(?:as\s+'.*?'\s*)?)$/i.test(
           docText
         ) &&
         !docText.includes("from") &&
@@ -1271,7 +1677,7 @@ export default function SqlEditor() {
           const lastField = fieldsBeforeCursor.split(",").slice(-1)[0].trim();
           const lastFieldName = lastField
             .replace(/\s+as\s+'.*?'$/i, "")
-            .replace(/^(count|sum)\s*\(([*]|\w+)\)/i, "$2")
+            .replace(/^(count|sum|max|min)\s*\(([*]|\w+)\)/i, "$2")
             .trim()
             .toLowerCase();
           const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
@@ -1279,6 +1685,12 @@ export default function SqlEditor() {
             lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
           );
           const isSum = /^sum\s*\([\w*]+\)$/i.test(
+            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
+          );
+          const isMax = /^max\s*\([\w*]+\)$/i.test(
+            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
+          );
+          const isMin = /^min\s*\([\w*]+\)$/i.test(
             lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
           );
 
@@ -1289,15 +1701,21 @@ export default function SqlEditor() {
                 (col) => col.name.toLowerCase() === lastFieldName
               ) ||
               isCount ||
-              isSum)
+              isSum ||
+              isMax ||
+              isMin)
           ) {
             const formattedAlias =
-              lastFieldName !== "*" && !isCount && !isSum
+              lastFieldName !== "*" && !isCount && !isSum && !isMax && !isMin
                 ? formatColumnName(lastFieldName)
                 : isCount
                 ? "count"
                 : isSum
                 ? "sum"
+                : isMax
+                ? "max"
+                : isMin
+                ? "min"
                 : undefined;
             const options = [
               {
