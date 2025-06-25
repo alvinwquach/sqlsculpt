@@ -390,7 +390,7 @@ export default function SqlEditor() {
         /^select\s+round\s*\((\w+),\s*(\d+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const groupByMatch = query.match(
-        /^select\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+group\s+by\s+(.+?))(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+group\s+by\s+(.+?))(?:\s+having\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectDistinctMatch = query.match(
         /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
@@ -410,7 +410,7 @@ export default function SqlEditor() {
         !groupByMatch
       ) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [GROUP BY <fields>] [ORDER BY <column> [ASC|DESC]] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT AVG(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT ROUND(<column>, <decimals>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [GROUP BY <fields> [HAVING <condition>]] [ORDER BY <column> [ASC|DESC]] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT AVG(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT ROUND(<column>, <decimals>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
         );
         setTooltip(null);
         return true;
@@ -422,6 +422,7 @@ export default function SqlEditor() {
           rawFields,
           whereClause,
           groupByClause,
+          havingClause,
           orderByColumn,
           orderByDirection = "ASC",
           limitValue,
@@ -445,44 +446,97 @@ export default function SqlEditor() {
           alias?: string;
           isAggregate: boolean;
           aggregateType?: string;
+          innerAggregate?: string; // For nested aggregates like ROUND(AVG(...))
+          decimals?: number; // For ROUND decimals
         }> = [];
 
         for (const field of rawFieldsWithAliases) {
           const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
           let fieldName = field;
-          let alias = field;
+          let alias: string | undefined;
           let isAggregate = false;
           let aggregateType: string | undefined;
+          let innerAggregate: string | undefined;
+          let decimals: number | undefined;
 
           if (asMatch) {
             fieldName = asMatch[1].trim();
             alias = asMatch[2];
           }
 
+          // Handle ROUND(AVG(column)) or ROUND(AVG(column), decimals)
+          const roundAvgMatch = fieldName.match(
+            /^round\s*\(\s*avg\s*\((\w+)\)(?:,\s*(\d+))?\s*\)$/i
+          );
           const aggregateMatch = fieldName.match(
             /^(count|sum|max|min|avg|round)\s*\((.*?)\)\s*$/i
           );
-          if (aggregateMatch) {
+
+          if (roundAvgMatch) {
+            isAggregate = true;
+            aggregateType = "round";
+            innerAggregate = "avg";
+            fieldName = roundAvgMatch[1].trim(); // e.g., power_level
+            decimals = roundAvgMatch[2] ? parseInt(roundAvgMatch[2], 10) : 0;
+            alias = alias || "round_avg";
+          } else if (aggregateMatch) {
             isAggregate = true;
             aggregateType = aggregateMatch[1].toLowerCase();
-            if (!aggregateFunctions.includes(aggregateType)) {
-              setResult(`Error: Invalid aggregate function: ${aggregateType}`);
-              setTooltip(null);
-              return false;
-            }
             fieldName = aggregateMatch[2].trim();
             if (aggregateType === "count" && fieldName === "*") {
               fieldName = "*";
-            } else if (
-              aggregateType === "round" &&
-              fieldName.match(/^(\w+),\s*(\d+)$/)
+            } else if (aggregateType === "round") {
+              const roundMatch = fieldName.match(/^(\w+),\s*(\d+)$/);
+              if (roundMatch) {
+                fieldName = roundMatch[1];
+                decimals = parseInt(roundMatch[2], 10);
+              }
+            }
+            alias = alias || aggregateType;
+          } else {
+            alias = alias || fieldName;
+          }
+
+          if (
+            !isAggregate ||
+            (isAggregate &&
+              fieldName !== "*" &&
+              aggregateType !== "round" &&
+              !innerAggregate)
+          ) {
+            if (
+              !powerRangersData.columns.some(
+                (col) => col.name.toLowerCase() === fieldName.toLowerCase()
+              )
             ) {
-              const [, col] = fieldName.match(/^(\w+),\s*(\d+)$/i)!;
-              fieldName = col;
+              setResult(
+                `Error: Invalid field in aggregate function: ${fieldName}`
+              );
+              setTooltip(null);
+              return false;
             }
           }
 
-          fields.push({ name: fieldName, alias, isAggregate, aggregateType });
+          if (
+            aggregateType === "round" &&
+            !innerAggregate &&
+            (isNaN(decimals!) || decimals! < 0)
+          ) {
+            setResult(
+              "Error: ROUND requires a valid column and non-negative integer for decimal places"
+            );
+            setTooltip(null);
+            return false;
+          }
+
+          fields.push({
+            name: fieldName,
+            alias,
+            isAggregate,
+            aggregateType,
+            innerAggregate,
+            decimals,
+          });
         }
 
         const nonAggregateFields = fields
@@ -802,30 +856,51 @@ export default function SqlEditor() {
                     return acc === null || val < acc ? val : acc;
                   }, null as string | null);
                 }
-              } else if (field.aggregateType === "round") {
-                const [, col, decimals] =
-                  field.name.match(/^(\w+),\s*(\d+)$/) || [];
-                const decimalPlaces = parseInt(decimals, 10);
-                if (!col || isNaN(decimalPlaces) || decimalPlaces < 0) {
+              } else if (
+                field.aggregateType === "round" &&
+                field.innerAggregate === "avg"
+              ) {
+                const columnDef = powerRangersData.columns.find(
+                  (col) => col.name.toLowerCase() === column.toLowerCase()
+                );
+                if (!columnDef || columnDef.type !== "integer") {
                   setResult(
-                    "Error: ROUND requires a valid column and non-negative integer for decimal places"
+                    `Error: ROUND(AVG()) can only be applied to numeric columns: ${column}`
                   );
                   setTooltip(null);
                   return false;
                 }
+                const values = groupRows
+                  .map((row) => Number(row[column as keyof PowerRanger]))
+                  .filter((val) => !isNaN(val));
+                const avg =
+                  values.length > 0
+                    ? values.reduce((acc, val) => acc + val, 0) / values.length
+                    : null;
+                if (avg === null) {
+                  setResult(
+                    `Error: No valid values found for ROUND(AVG(${column}))`
+                  );
+                  setTooltip(null);
+                  return false;
+                }
+                value = Number(avg.toFixed(field.decimals || 0));
+              } else if (field.aggregateType === "round") {
                 const columnDef = powerRangersData.columns.find(
-                  (c) => c.name.toLowerCase() === col.toLowerCase()
+                  (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
                 if (!columnDef || columnDef.type !== "integer") {
                   setResult(
-                    `Error: ROUND can only be applied to numeric columns: ${col}`
+                    `Error: ROUND can only be applied to numeric columns: ${column}`
                   );
                   setTooltip(null);
                   return false;
                 }
                 value = groupRows.reduce((acc, row) => {
-                  const val = Number(row[col as keyof PowerRanger]);
-                  return isNaN(val) ? acc : Number(val.toFixed(decimalPlaces));
+                  const val = Number(row[column as keyof PowerRanger]);
+                  return isNaN(val)
+                    ? acc
+                    : Number(val.toFixed(field.decimals || 0));
                 }, null as number | null);
               }
 
@@ -837,11 +912,52 @@ export default function SqlEditor() {
                 return false;
               }
 
-              resultRow[field.alias || field.name] = value;
+              resultRow[field.alias!] = value; // Use the alias set earlier
             }
           }
 
           resultData.push(resultRow);
+        }
+
+        if (havingClause) {
+          const havingMatch = havingClause.match(
+            /^(count|sum|max|min|avg)\s*\(([*]|\w+)\)\s*(=|\!=|>|<|>=|<=)\s*(\d+)$/i
+          );
+          if (!havingMatch) {
+            setResult(`Error: Invalid HAVING clause: ${havingClause}`);
+            setTooltip(null);
+            return false;
+          }
+
+          const [, aggregateType, column, operator, value] = havingMatch;
+          resultData = resultData.filter((row) => {
+            const field = fields.find(
+              (f) =>
+                f.isAggregate &&
+                f.aggregateType?.toLowerCase() ===
+                  aggregateType.toLowerCase() &&
+                f.name.toLowerCase() === column.toLowerCase()
+            );
+            const aggValue = row[field?.alias!];
+            const typedValue = Number(value);
+
+            switch (operator.toUpperCase()) {
+              case "=":
+                return Number(aggValue) === typedValue;
+              case "!=":
+                return Number(aggValue) !== typedValue;
+              case ">":
+                return Number(aggValue) > typedValue;
+              case "<":
+                return Number(aggValue) < typedValue;
+              case ">=":
+                return Number(aggValue) >= typedValue;
+              case "<=":
+                return Number(aggValue) <= typedValue;
+              default:
+                return false;
+            }
+          });
         }
 
         if (orderByColumn) {
@@ -2443,10 +2559,7 @@ export default function SqlEditor() {
                 f
                   .trim()
                   .replace(/\s+as\s+'.*?'$/i, "")
-                  .replace(
-                    /^(count|sum|max|min|avg|round)\s*\(([*]|\w+)(?:,\s*\d+)?\)/i,
-                    "$2"
-                  )
+                  .replace(/^round\s*\(\s*avg\s*\((\w+)\)\s*\)$/i, "$1")
                   .toLowerCase()
               )
               .filter((f) => f)
@@ -2565,6 +2678,14 @@ export default function SqlEditor() {
               type: "function",
               apply: `ROUND(${col.name}, `,
               detail: `Round values in ${col.name} to specified decimals`,
+            })),
+          ...powerRangersData.columns
+            .filter((col) => col.type === "integer")
+            .map((col) => ({
+              label: `ROUND(AVG(${col.name}), `,
+              type: "function",
+              apply: `ROUND(AVG(${col.name}), `,
+              detail: `Round average of ${col.name} to specified decimals`,
             }))
         );
         return { from: word?.from ?? cursorPos, options };
@@ -2637,94 +2758,84 @@ export default function SqlEditor() {
               type: "function",
               apply: `ROUND(${col.name}, `,
               detail: `Round values in ${col.name} to specified decimals`,
+            })),
+          ...powerRangersData.columns
+            .filter((col) => col.type === "integer")
+            .map((col) => ({
+              label: `ROUND(AVG(${col.name}), `,
+              type: "function",
+              apply: `ROUND(AVG(${col.name}), `,
+              detail: `Round average of ${col.name} to specified decimals`,
             }))
         );
         return { from: word?.from ?? cursorPos, options };
       }
 
-      // 6. After a field or aggregate (with or without alias), suggest AS, FROM, GROUP BY, or comma
+      // 6. After a field or aggregate (with or without alias), suggest , AS, FROM, GROUP BY
       if (
-        /^select\s+(?:distinct\s+)?(?:[\w\s,'*]+|(?:count|sum|max|min|avg|round)\s*\([\w*]+(?:,\s*\d+)?\)\s*(?:as\s+'.*?'\s*)?)$/i.test(
+        /^select\s+(?:distinct\s+)?(?:[\w*]+|(?:count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)(?:\s+as\s+'.*?')?)(?:\s*,\s*(?:[\w*]+|(?:count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)(?:\s+as\s+'.*?')?))*\s*$/i.test(
           fullDocText.substring(0, cursorPos).trim()
         ) &&
         !fullDocText.toLowerCase().includes("from")
       ) {
         const fieldsBeforeCursor = fullDocText.match(
-          /^select\s+(?:distinct\s+)?(.+?)\s*$/i
+          /^select\s+(?:distinct\s+)?(.+)$/i
         )?.[1];
         if (fieldsBeforeCursor) {
           const fields = fieldsBeforeCursor
-            .split(/(?<!\([^()]*),(?![^()]*\))/)
+            .split(/(?<!\([^()]*),(?![^()]*\))/g)
             .map((field) => field.trim())
             .filter((f) => f);
 
-          const lastField = fields[fields.length - 1];
-          const lastFieldName = lastField
+          const lastField = fields[fields.length - 1] || "";
+          const lastFieldClean = lastField
             .replace(/\s+as\s+'.*?'$/i, "")
-            .replace(
-              /^(count|sum|max|min|avg|round)\s*\(([*]|\w+)(?:,\s*\d+)?\)/i,
-              "$2"
-            )
-            .trim()
-            .toLowerCase();
-
+            .trim();
+          const isAggregate =
+            /^(count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)$/i.test(
+              lastFieldClean
+            );
+          const isNestedAggregate =
+            /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i.test(
+              lastFieldClean
+            );
+          const isColumn =
+            lastFieldClean.toLowerCase() === "*" ||
+            powerRangersData.columns.some(
+              (col) => col.name.toLowerCase() === lastFieldClean.toLowerCase()
+            );
           const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
-          const isCount = /^count\s*\([\w*]+\)$/i.test(
-            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
-          );
-          const isSum = /^sum\s*\([\w*]+\)$/i.test(
-            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
-          );
-          const isMax = /^max\s*\([\w*]+\)$/i.test(
-            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
-          );
-          const isMin = /^min\s*\([\w*]+\)$/i.test(
-            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
-          );
-          const isAvg = /^avg\s*\([\w*]+\)$/i.test(
-            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
-          );
-          const isRound = /^round\s*\([\w*]+,\s*\d+\)$/i.test(
-            lastField.replace(/\s+as\s+'.*?'$/i, "").trim()
-          );
+
+          // Check if cursor is after a valid field, aggregate, or nested aggregate
+          const cursorAfterFieldOrAggregate =
+            lastFieldClean.length > 0 ||
+            fullDocText.substring(0, cursorPos).trim().endsWith(lastFieldClean);
 
           if (
-            !hasAlias &&
-            (lastFieldName === "*" ||
-              powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === lastFieldName
-              ) ||
-              isCount ||
-              isSum ||
-              isMax ||
-              isMin ||
-              isAvg ||
-              isRound)
+            (isColumn || isAggregate || isNestedAggregate) &&
+            cursorAfterFieldOrAggregate
           ) {
-            const formattedAlias =
-              lastFieldName !== "*" &&
-              !isCount &&
-              !isSum &&
-              !isMax &&
-              !isMin &&
-              !isAvg &&
-              !isRound
-                ? formatColumnName(lastFieldName)
-                : isCount
-                ? "count"
-                : isSum
-                ? "sum"
-                : isMax
-                ? "max"
-                : isMin
-                ? "min"
-                : isAvg
-                ? "avg"
-                : isRound
-                ? "round"
-                : undefined;
+            const formattedAlias = isAggregate
+              ? lastFieldClean
+                  .match(/^(count|sum|max|min|avg|round)/i)?.[1]
+                  .toLowerCase()
+              : isNestedAggregate
+              ? lastFieldClean.match(
+                  /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*(\d+))?\)$/i
+                )
+                ? "round_avg"
+                : undefined
+              : lastFieldClean.toLowerCase() === "*"
+              ? undefined
+              : formatColumnName(lastFieldClean);
 
             const options = [
+              {
+                label: ",",
+                type: "operator",
+                apply: ", ",
+                detail: "Add another field",
+              },
               {
                 label: "FROM",
                 type: "keyword",
@@ -2737,19 +2848,13 @@ export default function SqlEditor() {
                 apply: " GROUP BY ",
                 detail: "Group results by columns",
               },
-              {
-                label: ",",
-                type: "operator",
-                apply: ", ",
-                detail: "Add another field",
-              },
             ];
 
-            if (formattedAlias) {
+            if (!hasAlias && formattedAlias) {
               options.unshift({
                 label: "AS",
                 type: "keyword",
-                apply: ` AS '${formattedAlias}'`,
+                apply: ` AS '${formattedAlias}' `,
                 detail: "Alias the column",
               });
             }
@@ -2759,92 +2864,31 @@ export default function SqlEditor() {
         }
       }
 
-      // 7. After AS 'alias', suggest next field, FROM, or GROUP BY
+      // 7. After AS 'alias', suggest , FROM, GROUP BY
       if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
-        const endsWithComma = /,\s*$/.test(docText.substring(0, cursorPos));
-        const options = endsWithComma
-          ? [
-              ...getColumnOptions(alreadySelectedFields),
-              {
-                label: "COUNT(*)",
-                type: "function",
-                apply: "COUNT(*)",
-                detail: "Count all rows",
-              },
-              ...powerRangersData.columns.map((col) => ({
-                label: `COUNT(${col.name})`,
-                type: "function",
-                apply: `COUNT(${col.name})`,
-                detail: `Count non-null values in ${col.name}`,
-              })),
-              ...powerRangersData.columns
-                .filter((col) => col.type === "integer")
-                .map((col) => ({
-                  label: `SUM(${col.name})`,
-                  type: "function",
-                  apply: `SUM(${col.name})`,
-                  detail: `Sum values in ${col.name}`,
-                })),
-              ...powerRangersData.columns
-                .filter((col) => col.type === "integer" || col.type === "date")
-                .map((col) => ({
-                  label: `MAX(${col.name})`,
-                  type: "function",
-                  apply: `MAX(${col.name})`,
-                  detail: `Maximum value in ${col.name}`,
-                })),
-              ...powerRangersData.columns
-                .filter((col) => col.type === "integer" || col.type === "date")
-                .map((col) => ({
-                  label: `MIN(${col.name})`,
-                  type: "function",
-                  apply: `MIN(${col.name})`,
-                  detail: `Minimum value in ${col.name}`,
-                })),
-              ...powerRangersData.columns
-                .filter((col) => col.type === "integer")
-                .map((col) => ({
-                  label: `AVG(${col.name})`,
-                  type: "function",
-                  apply: `AVG(${col.name})`,
-                  detail: `Average value in ${col.name}`,
-                })),
-              ...powerRangersData.columns
-                .filter((col) => col.type === "integer")
-                .map((col) => ({
-                  label: `ROUND(${col.name}, `,
-                  type: "function",
-                  apply: `ROUND(${col.name}, `,
-                  detail: `Round values in ${col.name} to specified decimals`,
-                })),
-              {
-                label: "FROM",
-                type: "keyword",
-                apply: " FROM ",
-                detail: "Proceed to table selection",
-              },
-              {
-                label: "GROUP BY",
-                type: "keyword",
-                apply: " GROUP BY ",
-                detail: "Group results by columns",
-              },
-            ]
-          : [
-              {
-                label: "FROM",
-                type: "keyword",
-                apply: " FROM ",
-                detail: "Specify table",
-              },
-              {
-                label: "GROUP BY",
-                type: "keyword",
-                apply: " GROUP BY ",
-                detail: "Group results by columns",
-              },
-            ];
-        return { from: word?.from ?? cursorPos, options };
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: ",",
+              type: "operator",
+              apply: ", ",
+              detail: "Add another field",
+            },
+            {
+              label: "FROM",
+              type: "keyword",
+              apply: " FROM ",
+              detail: "Specify table",
+            },
+            {
+              label: "GROUP BY",
+              type: "keyword",
+              apply: " GROUP BY ",
+              detail: "Group results by columns",
+            },
+          ],
+        };
       }
 
       // 8. After FROM, suggest power_rangers
@@ -2911,42 +2955,35 @@ export default function SqlEditor() {
         };
       }
 
-      // 11. After GROUP BY column or number, suggest comma, remaining columns/numbers, ORDER BY, or LIMIT
+      // 11. After GROUP BY column or number, suggest comma, remaining columns/numbers, HAVING, ORDER BY, or LIMIT
       if (
-        /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*(?:,\s*)?$/i.test(
-          docText
-        )
+        /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
       ) {
-        const groupByMatch = docText.match(/group\s+by\s+(.+?)(?:,\s*)?$/i);
-        const usedGroupByFields = groupByMatch
+        const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
+        const usedFields = groupByMatch
           ? groupByMatch[1]
               .split(",")
               .map((f) => f.trim())
               .filter((f) => f)
           : [];
 
-        const availableSelectFields = selectFields.filter(
-          ({ index }) => !usedGroupByFields.includes(`${index}`)
-        );
         const availableColumns = powerRangersData.columns.filter(
-          (col) => !usedGroupByFields.includes(col.name.toLowerCase())
+          (col) => !usedFields.includes(col.name.toLowerCase())
+        );
+
+        const availableSelectFields = selectFields.filter(
+          ({ index }) => !usedFields.includes(`${index}`)
         );
 
         return {
           from: word?.from ?? cursorPos,
           options: [
-            ...availableColumns.map((col) => ({
-              label: col.name,
-              type: "field",
-              apply: col.name,
-              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            })),
-            ...availableSelectFields.map(({ field, index }) => ({
-              label: `${index}`,
-              type: "value",
-              apply: `${index}`,
-              detail: `Reference to ${field}`,
-            })),
+            {
+              label: "HAVING",
+              type: "keyword",
+              apply: " HAVING ",
+              detail: "Filter groups based on aggregate conditions",
+            },
             {
               label: "ORDER BY",
               type: "keyword",
@@ -2959,9 +2996,22 @@ export default function SqlEditor() {
               apply: " LIMIT ",
               detail: "Limit number of rows",
             },
+            ...availableColumns.map((col) => ({
+              label: col.name,
+              type: "field",
+              apply: col.name,
+              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+            })),
+            ...availableSelectFields.map(({ field, index }) => ({
+              label: `${index}`,
+              type: "value",
+              apply: `${index}`,
+              detail: `Reference to ${field}`,
+            })),
           ],
         };
       }
+
       // 12. After WHERE, suggest columns
       if (/from\s+power_rangers\s+where\s*$/i.test(docText)) {
         return {
@@ -2969,6 +3019,7 @@ export default function SqlEditor() {
           options: getColumnOptions([]),
         };
       }
+
       // 13. After a complete condition, suggest AND, OR, GROUP BY, ORDER BY, or LIMIT
       if (
         /from\s+power_rangers\s+where\s+.*?(?:\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)|\w+\s*BETWEEN\s*('[^']*'|[^' ]\w*)\s*AND\s*('[^']*'|[^' ]\w*)|\w+\s*(IS NULL|IS NOT NULL))\s*$/i.test(
@@ -3249,6 +3300,171 @@ export default function SqlEditor() {
             ],
           };
         }
+      }
+
+      // 21. After GROUP BY columns, suggest HAVING, ORDER BY, or LIMIT
+      if (
+        /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
+      ) {
+        const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
+        const usedFields = groupByMatch
+          ? groupByMatch[1]
+              .split(",")
+              .map((f) => f.trim())
+              .filter((f) => f)
+          : [];
+
+        const availableColumns = powerRangersData.columns.filter(
+          (col) => !usedFields.includes(col.name.toLowerCase())
+        );
+        const availableSelectFields = selectFields.filter(
+          ({ index }) => !usedFields.includes(`${index}`)
+        );
+
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "HAVING",
+              type: "keyword",
+              apply: " HAVING ",
+              detail: "Filter groups based on aggregate conditions",
+            },
+            {
+              label: "ORDER BY",
+              type: "keyword",
+              apply: " ORDER BY ",
+              detail: "Sort results",
+            },
+            {
+              label: "LIMIT",
+              type: "keyword",
+              apply: " LIMIT ",
+              detail: "Limit number of rows",
+            },
+            ...availableColumns.map((col) => ({
+              label: col.name,
+              type: "field",
+              apply: col.name,
+              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+            })),
+            ...availableSelectFields.map(({ field, index }) => ({
+              label: `${index}`,
+              type: "value",
+              apply: `${index}`,
+              detail: `Reference to ${field}`,
+            })),
+          ],
+        };
+      }
+
+      // 22. After HAVING, suggest aggregate functions
+      if (/having\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "COUNT(*)",
+              type: "function",
+              apply: "COUNT(*) ",
+              detail: "Count all rows",
+            },
+            ...powerRangersData.columns.map((col) => ({
+              label: `COUNT(${col.name})`,
+              type: "function",
+              apply: `COUNT(${col.name}) `,
+              detail: `Count non-null values in ${col.name}`,
+            })),
+            ...powerRangersData.columns
+              .filter((col) => col.type === "integer")
+              .map((col) => ({
+                label: `SUM(${col.name})`,
+                type: "function",
+                apply: `SUM(${col.name}) `,
+                detail: `Sum values in ${col.name}`,
+              })),
+            ...powerRangersData.columns
+              .filter((col) => col.type === "integer" || col.type === "date")
+              .map((col) => ({
+                label: `MAX(${col.name})`,
+                type: "function",
+                apply: `MAX(${col.name}) `,
+                detail: `Maximum value in ${col.name}`,
+              })),
+            ...powerRangersData.columns
+              .filter((col) => col.type === "integer" || col.type === "date")
+              .map((col) => ({
+                label: `MIN(${col.name})`,
+                type: "function",
+                apply: `MIN(${col.name}) `,
+                detail: `Minimum value in ${col.name}`,
+              })),
+            ...powerRangersData.columns
+              .filter((col) => col.type === "integer")
+              .map((col) => ({
+                label: `AVG(${col.name})`,
+                type: "function",
+                apply: `AVG(${col.name}) `,
+                detail: `Average value in ${col.name}`,
+              })),
+          ],
+        };
+      }
+
+      // 23. After HAVING aggregate, suggest operators
+      if (
+        /having\s*(count|sum|max|min|avg)\s*\((?:[*]|\w+)\)\s*$/i.test(docText)
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
+            {
+              label: "!=",
+              type: "operator",
+              apply: "!= ",
+              detail: "Not equal to",
+            },
+            {
+              label: ">",
+              type: "operator",
+              apply: "> ",
+              detail: "Greater than",
+            },
+            { label: "<", type: "operator", apply: "< ", detail: "Less than" },
+            {
+              label: ">=",
+              type: "operator",
+              apply: ">= ",
+              detail: "Greater than or equal to",
+            },
+            {
+              label: "<=",
+              type: "operator",
+              apply: "<= ",
+              detail: "Less than or equal to",
+            },
+          ],
+        };
+      }
+
+      // 24. After HAVING aggregate operator, suggest numeric values
+      if (
+        /having\s*(count|sum|max|min|avg)\s*\((?:[*]|\w+)\)\s*(=|\!=|>|<|>=|<=)\s*$/i.test(
+          docText
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: ["0", "1", "2", "3", "4", "5", "10", "15", "20"].map(
+            (num) => ({
+              label: num,
+              type: "value",
+              apply: num,
+              detail: `Value ${num}`,
+            })
+          ),
+        };
       }
 
       return null;
