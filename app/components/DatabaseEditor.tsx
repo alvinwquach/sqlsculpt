@@ -477,7 +477,7 @@ export default function SqlEditor() {
               aggregateType === "round" &&
               fieldName.match(/^(\w+),\s*(\d+)$/)
             ) {
-              const [, col, decimals] = fieldName.match(/^(\w+),\s*(\d+)$/i)!;
+              const [col] = fieldName.match(/^(\w+),\s*(\d+)$/i)!;
               fieldName = col;
             }
           }
@@ -687,10 +687,10 @@ export default function SqlEditor() {
           groupedData[groupKey].push(row);
         });
 
-        let resultData: Record<string, any>[] = [];
+        let resultData: Record<string, string | number | null>[] = [];
         for (const groupKey in groupedData) {
           const groupRows = groupedData[groupKey];
-          const resultRow: Record<string, any> = {};
+          const resultRow: Record<string, string | number | null> = {};
 
           const groupValues = groupKey.split("|");
           groupByFields.forEach((field, index) => {
@@ -1793,8 +1793,6 @@ export default function SqlEditor() {
           decimalStr,
           alias = "round",
           whereClause,
-          orderByColumn,
-          orderByDirection,
           limitValue,
         ] = roundMatch;
         let filteredData = powerRangersData.data;
