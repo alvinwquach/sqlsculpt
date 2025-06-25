@@ -992,9 +992,11 @@ export default function SqlEditor() {
         const [
           ,
           roundColumn,
-          decimals,
+          decimalStr,
           alias = "round",
           whereClause,
+          orderByColumn,
+          orderByDirection,
           limitValue,
         ] = roundMatch;
         let filteredData = powerRangersData.data;
@@ -1009,6 +1011,14 @@ export default function SqlEditor() {
         if (columnDef.type !== "integer") {
           setResult(
             `Error: ROUND can only be applied to numeric columns: ${roundColumn}`
+          );
+          setTooltip(null);
+          return false;
+        }
+        const decimalPlaces = parseInt(decimalStr, 10);
+        if (isNaN(decimalPlaces) || decimalPlaces < 0) {
+          setResult(
+            "Error: ROUND requires a non-negative integer for decimal places"
           );
           setTooltip(null);
           return false;
@@ -1135,7 +1145,6 @@ export default function SqlEditor() {
           });
         }
 
-        const decimalPlaces = parseInt(decimals, 10);
         if (isNaN(decimalPlaces) || decimalPlaces < 0) {
           setResult(
             "Error: ROUND requires a non-negative integer for decimal places"
@@ -1749,8 +1758,6 @@ export default function SqlEditor() {
         } else {
           setTooltip(null);
         }
-      } else {
-        setTooltip(null);
       }
 
       if (orderByColumn) {
