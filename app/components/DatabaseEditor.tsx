@@ -2913,7 +2913,6 @@ export default function SqlEditor() {
           docText
         )
       ) {
-        // Extract already used GROUP BY fields
         const groupByMatch = docText.match(/group\s+by\s+(.+?)(?:,\s*)?$/i);
         const usedGroupByFields = groupByMatch
           ? groupByMatch[1]
@@ -2922,7 +2921,6 @@ export default function SqlEditor() {
               .filter((f) => f)
           : [];
 
-        // Filter out already used column references
         const availableSelectFields = selectFields.filter(
           ({ index }) => !usedGroupByFields.includes(`${index}`)
         );
