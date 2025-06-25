@@ -428,15 +428,6 @@ export default function SqlEditor() {
           limitValue,
         ] = groupByMatch;
 
-        const aggregateFunctions: string[] = [
-          "count",
-          "sum",
-          "max",
-          "min",
-          "avg",
-          "round",
-        ];
-
         const rawFieldsWithAliases = rawFields
           .split(/(?<!\([^()]*),(?![^()]*\))/)
           .map((f) => f.trim())
@@ -446,8 +437,8 @@ export default function SqlEditor() {
           alias?: string;
           isAggregate: boolean;
           aggregateType?: string;
-          innerAggregate?: string; // For nested aggregates like ROUND(AVG(...))
-          decimals?: number; // For ROUND decimals
+          innerAggregate?: string;
+          decimals?: number;
         }> = [];
 
         for (const field of rawFieldsWithAliases) {
@@ -464,7 +455,6 @@ export default function SqlEditor() {
             alias = asMatch[2];
           }
 
-          // Handle ROUND(AVG(column)) or ROUND(AVG(column), decimals)
           const roundAvgMatch = fieldName.match(
             /^round\s*\(\s*avg\s*\((\w+)\)(?:,\s*(\d+))?\s*\)$/i
           );
