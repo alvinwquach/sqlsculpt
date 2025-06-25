@@ -995,8 +995,6 @@ export default function SqlEditor() {
           decimalStr,
           alias = "round",
           whereClause,
-          orderByColumn,
-          orderByDirection,
           limitValue,
         ] = roundMatch;
         let filteredData = powerRangersData.data;
