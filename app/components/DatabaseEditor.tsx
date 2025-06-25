@@ -902,7 +902,7 @@ export default function SqlEditor() {
                 return false;
               }
 
-              resultRow[field.alias!] = value; // Use the alias set earlier
+              resultRow[field.alias ?? field.name] = value;
             }
           }
 
