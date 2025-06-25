@@ -1232,8 +1232,20 @@ export default function SqlEditor() {
         return true;
       }
 
+
       if (maxMatch) {
         const [, maxColumn, alias = "max", whereClause, limitValue] = maxMatch;
+
+      if (roundMatch) {
+        const [
+          ,
+          roundColumn,
+          decimalStr,
+          alias = "round",
+          whereClause,
+          limitValue,
+        ] = roundMatch;
+
         let filteredData = powerRangersData.data;
 
         const columnDef = powerRangersData.columns.find(
@@ -1247,6 +1259,15 @@ export default function SqlEditor() {
         if (columnDef.type !== "integer" && columnDef.type !== "date") {
           setResult(
             `Error: MAX can only be applied to numeric or date columns: ${maxColumn}`
+          );
+          setTooltip(null);
+          return false;
+        }
+
+        const decimalPlaces = parseInt(decimalStr, 10);
+        if (isNaN(decimalPlaces) || decimalPlaces < 0) {
+          setResult(
+            "Error: ROUND requires a non-negative integer for decimal places"
           );
           setTooltip(null);
           return false;
@@ -1375,6 +1396,7 @@ export default function SqlEditor() {
           });
         }
 
+
         let max: number | string | null = null;
         if (columnDef.type === "integer") {
           max = filteredData.reduce((acc, row) => {
@@ -1392,6 +1414,12 @@ export default function SqlEditor() {
 
         if (max === null) {
           setResult(`Error: No valid values found for MAX(${maxColumn})`);
+
+        if (isNaN(decimalPlaces) || decimalPlaces < 0) {
+          setResult(
+            "Error: ROUND requires a non-negative integer for decimal places"
+          );
+
           setTooltip(null);
           return false;
         }
@@ -2214,6 +2242,7 @@ export default function SqlEditor() {
             setTooltip(null);
           }
         }
+      }
 
         if (orderByColumn) {
           if (
