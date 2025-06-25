@@ -918,7 +918,7 @@ export default function SqlEditor() {
             setTooltip(null);
             return false;
           }
-
+        
           const [, aggregateType, column, operator, value] = havingMatch;
           resultData = resultData.filter((row) => {
             const field = fields.find(
@@ -928,7 +928,8 @@ export default function SqlEditor() {
                   aggregateType.toLowerCase() &&
                 f.name.toLowerCase() === column.toLowerCase()
             );
-            const aggValue = row[field?.alias!];
+            const aggValue = field?.alias ? row[field.alias] : undefined;
+            if (aggValue === undefined) return false;
             const typedValue = Number(value);
 
             switch (operator.toUpperCase()) {
