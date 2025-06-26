@@ -396,9 +396,8 @@ export default function SqlEditor() {
         /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
       const selectMatch = query.match(
-        /^select\s+(?!distinct|count\s*\(|sum\s*\(|max\s*\(|min\s*\(|avg\s*\(|round\s*\()(.*?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        /^select\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(asc|desc))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
       );
-
       if (
         !selectMatch &&
         !selectDistinctMatch &&
@@ -410,7 +409,7 @@ export default function SqlEditor() {
         !groupByMatch
       ) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields> FROM power_rangers [WHERE <condition>] [GROUP BY <fields> [HAVING <condition>]] [ORDER BY <column> [ASC|DESC]] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT AVG(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT ROUND(<column>, <decimals>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SELECT [DISTINCT] <fields|CASE WHEN ... END> FROM power_rangers [WHERE <condition>] [GROUP BY <fields> [HAVING <condition>]] [ORDER BY <column> [ASC|DESC]] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT AVG(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT ROUND(<column>, <decimals>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
         );
         setTooltip(null);
         return true;
@@ -466,7 +465,7 @@ export default function SqlEditor() {
             isAggregate = true;
             aggregateType = "round";
             innerAggregate = "avg";
-            fieldName = roundAvgMatch[1].trim(); // e.g., power_level
+            fieldName = roundAvgMatch[1].trim();
             decimals = roundAvgMatch[2] ? parseInt(roundAvgMatch[2], 10) : 0;
             alias = alias || "round_avg";
           } else if (aggregateMatch) {
@@ -918,7 +917,7 @@ export default function SqlEditor() {
             setTooltip(null);
             return false;
           }
-        
+
           const [, aggregateType, column, operator, value] = havingMatch;
           resultData = resultData.filter((row) => {
             const field = fields.find(
@@ -2097,7 +2096,9 @@ export default function SqlEditor() {
           return false;
         }
 
-        const rawFieldsWithAliases = match[1].split(",").map((f) => f.trim());
+        const rawFieldsWithAliases = match[1]
+          .split(/(?<!\([^()]*),(?![^()]*\))/)
+          .map((f) => f.trim());
         const whereClause = match[2]?.trim();
         const orderByColumn = match[3];
         const orderByDirection = match[4]?.toUpperCase() || "ASC";
@@ -2112,37 +2113,114 @@ export default function SqlEditor() {
           return false;
         }
 
-        const fields: string[] = [];
+        // Define field structure to include CASE statements
+        const fields: Array<{
+          name: string;
+          alias?: string;
+          isCase?: boolean;
+          caseConditions?: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            output: string;
+          }>;
+          elseOutput?: string;
+        }> = [];
         const aliases: { [key in keyof PowerRanger]?: string } = {};
 
+        // Parse fields, including CASE statements
         for (const field of rawFieldsWithAliases) {
           const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
+          let fieldName = field;
+          let alias: string | undefined;
+          let isCase = false;
+          let caseConditions: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            output: string;
+          }> = [];
+          let elseOutput: string | undefined;
+
           if (asMatch) {
-            const fieldName = asMatch[1].trim();
-            const aliasName = asMatch[2];
-            fields.push(fieldName);
-            aliases[fieldName as keyof PowerRanger] = aliasName;
+            fieldName = asMatch[1].trim();
+            alias = asMatch[2];
+          }
+
+          // Detect and parse CASE statement
+          const caseMatch = fieldName.match(
+            /^case\s+((?:when\s+\w+\s*(?:=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:'[^']*'|[^' ]\w*)\s*(?:and\s*(?:'[^']*'|[^' ]\w*)\s*)?then\s*(?:'[^']*'|[^' ]\w*)\s*)+)(?:else\s*('[^']*'|[^' ]\w*)\s*)?end$/i
+          );
+
+          if (caseMatch) {
+            isCase = true;
+            const conditionsStr = caseMatch[1];
+            elseOutput = caseMatch[2];
+
+            // Parse WHEN clauses
+            const whenMatches = conditionsStr.matchAll(
+              /when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*(?:and\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*)?then\s*('[^']*'|[^' ]\w*)/gi
+            );
+            for (const whenMatch of whenMatches) {
+              const [, column, operator, value1, value2, output] = whenMatch;
+              if (
+                !powerRangersData.columns.some(
+                  (col) => col.name.toLowerCase() === column.toLowerCase()
+                )
+              ) {
+                setResult(`Error: Invalid column in CASE WHEN: ${column}`);
+                setTooltip(null);
+                return false;
+              }
+              caseConditions.push({
+                column,
+                operator: operator.toUpperCase(),
+                value1,
+                value2:
+                  operator.toUpperCase() === "BETWEEN" ? value2 : undefined,
+                output,
+              });
+            }
+
+            fields.push({
+              name: fieldName,
+              alias: alias || "case_output",
+              isCase,
+              caseConditions,
+              elseOutput,
+            });
           } else {
-            fields.push(field);
+            fields.push({ name: fieldName, alias });
+            if (asMatch) {
+              aliases[fieldName as keyof PowerRanger] = alias;
+            }
           }
         }
 
-        const uniqueFields = new Set(fields);
+        // Validate fields
+        const uniqueFields = new Set(fields.map((f) => f.name));
         if (uniqueFields.size !== fields.length) {
           setResult("Error: Duplicate field names are not allowed");
           setTooltip(null);
           return false;
         }
 
-        if (fields.includes("*") && fields.length > 1) {
+        if (
+          fields.some((f) => !f.isCase && f.name === "*" && fields.length > 1)
+        ) {
           setResult("Error: Cannot mix * with specific fields");
           setTooltip(null);
           return false;
         }
 
-        const actualFields = fields.includes("*")
+        const actualFields = fields
+          .filter((f) => !f.isCase)
+          .map((f) => f.name)
+          .includes("*")
           ? powerRangersData.columns.map((col) => col.name)
-          : fields;
+          : fields.filter((f) => !f.isCase).map((f) => f.name);
 
         const invalidFields = actualFields.filter(
           (field) => !powerRangersData.columns.some((col) => col.name === field)
@@ -2278,22 +2356,63 @@ export default function SqlEditor() {
           });
         }
 
-        let resultData: Partial<PowerRanger>[] = filteredData.map((row) =>
-          Object.fromEntries(
-            actualFields.map((field) => {
-              const alias = aliases[field as keyof PowerRanger] || field;
-              return [alias, row[field as keyof PowerRanger]];
-            })
-          )
-        );
+        // Generate results, evaluating CASE statements
+        let resultData: Partial<PowerRanger>[] = filteredData.map((row) => {
+          const resultRow: Record<string, string | number | null> = {};
+          fields.forEach((field) => {
+            const alias = field.alias || field.name;
+            if (field.isCase) {
+              let value: string | null = field.elseOutput || null;
+              for (const condition of field.caseConditions!) {
+                if (condition.operator === "BETWEEN") {
+                  if (
+                    evaluateBetweenCondition(
+                      row,
+                      condition.column,
+                      condition.value1!,
+                      condition.value2!
+                    )
+                  ) {
+                    value = condition.output;
+                    break;
+                  }
+                } else if (
+                  ["IS NULL", "IS NOT NULL"].includes(condition.operator) &&
+                  evaluateNullCondition(
+                    row,
+                    condition.column,
+                    condition.operator
+                  )
+                ) {
+                  value = condition.output;
+                  break;
+                } else if (
+                  evaluateCondition(
+                    row,
+                    condition.column,
+                    condition.operator,
+                    condition.value1!
+                  )
+                ) {
+                  value = condition.output;
+                  break;
+                }
+              }
+              resultRow[alias] = value;
+            } else {
+              resultRow[alias] = row[field.name as keyof PowerRanger];
+            }
+          });
+          return resultRow;
+        });
 
         if (isDistinct) {
           const distinctRows = new Set<string>();
           resultData = resultData.filter(
             (row: Record<string, string | number | undefined>) => {
-              const key = actualFields
+              const key = fields
                 .map((field) => {
-                  const alias = aliases[field as keyof PowerRanger] || field;
+                  const alias = field.alias || field.name;
                   return `${alias}:${row[alias]}`;
                 })
                 .join("|");
@@ -2307,7 +2426,7 @@ export default function SqlEditor() {
 
           if (fields.length > 1) {
             const groupByFields = fields.map(
-              (field) => aliases[field as keyof PowerRanger] || field
+              (field) => field.alias || field.name
             );
             setTooltip(
               `SELECT DISTINCT ${groupByFields.join(
@@ -2539,7 +2658,7 @@ export default function SqlEditor() {
       const selectMatch = fullDocText
         .substring(0, cursorPos)
         .match(
-          /^select\s+(?:distinct\s+|(?:(?:count|sum|max|min|avg|round)\s*\([\w*]+(?:,\s*\d+)?\)\s*(?:as\s+'.*?'\s*)?,)*)?(.+?)?(?:\s+from|$)/i
+          /^select\s+(?:distinct\s+|(?:(?:count|sum|max|min|avg|round|case)\s*\([\w*]+(?:,\s*\d+)?\)\s*(?:as\s+'.*?'\s*)?,)*)?(.+?)?(?:\s+from|$)/i
         );
 
       const alreadySelectedFields =
@@ -2551,6 +2670,7 @@ export default function SqlEditor() {
                   .trim()
                   .replace(/\s+as\s+'.*?'$/i, "")
                   .replace(/^round\s*\(\s*avg\s*\((\w+)\)\s*\)$/i, "$1")
+                  .replace(/^case\s+.*?\s+end$/i, "")
                   .toLowerCase()
               )
               .filter((f) => f)
@@ -2617,6 +2737,12 @@ export default function SqlEditor() {
             type: "keyword",
             apply: "DISTINCT ",
             detail: "Select unique values",
+          },
+          {
+            label: "CASE",
+            type: "keyword",
+            apply: "CASE ",
+            detail: "Conditional logic",
           },
           {
             label: "COUNT(*)",
@@ -2698,6 +2824,12 @@ export default function SqlEditor() {
       ) {
         const options = getColumnOptions(alreadySelectedFields);
         options.push(
+          {
+            label: "CASE",
+            type: "keyword",
+            apply: "CASE ",
+            detail: "Conditional logic",
+          },
           {
             label: "COUNT(*)",
             type: "function",
@@ -3455,6 +3587,311 @@ export default function SqlEditor() {
               detail: `Value ${num}`,
             })
           ),
+        };
+      }
+
+      // 25. After CASE, suggest WHEN
+      if (/^select\s+.*?\bcase\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "WHEN",
+              type: "keyword",
+              apply: "WHEN ",
+              detail: "Start a condition",
+            },
+          ],
+        };
+      }
+
+      // 26. After CASE WHEN, suggest columns
+      if (/^select\s+.*?\bcase\s+when\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: getColumnOptions([]),
+        };
+      }
+
+      // 27. After CASE WHEN column, suggest operators
+      if (
+        /^select\s+.*?\bcase\s+when\s+\w+\s*$/i.test(docText) &&
+        powerRangersData.columns.some((col) =>
+          new RegExp(`when\\s+${col.name.toLowerCase()}\\s*$`, "i").test(
+            docText
+          )
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
+            {
+              label: "!=",
+              type: "operator",
+              apply: "!= ",
+              detail: "Not equal to",
+            },
+            {
+              label: ">",
+              type: "operator",
+              apply: "> ",
+              detail: "Greater than",
+            },
+            { label: "<", type: "operator", apply: "< ", detail: "Less than" },
+            {
+              label: ">=",
+              type: "operator",
+              apply: ">= ",
+              detail: "Greater than or equal to",
+            },
+            {
+              label: "<=",
+              type: "operator",
+              apply: "<= ",
+              detail: "Less than or equal to",
+            },
+            {
+              label: "LIKE",
+              type: "operator",
+              apply: "LIKE ",
+              detail: "Pattern matching",
+            },
+            {
+              label: "BETWEEN",
+              type: "operator",
+              apply: "BETWEEN ",
+              detail: "Range filter",
+            },
+            {
+              label: "IS NULL",
+              type: "operator",
+              apply: "IS NULL ",
+              detail: "Check for null values",
+            },
+            {
+              label: "IS NOT NULL",
+              type: "operator",
+              apply: "IS NOT NULL ",
+              detail: "Check for non-null values",
+            },
+          ],
+        };
+      }
+
+      // 28. After CASE WHEN column operator, suggest values
+      const caseValuePattern =
+        /^select\s+.*?\bcase\s+when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
+      if (caseValuePattern.test(docText)) {
+        const match = docText.match(caseValuePattern);
+        if (match) {
+          const column = match[1];
+          const operator = match[2];
+          const value1 = match[3];
+          const columnType = powerRangersData.columns.find(
+            (col) => col.name.toLowerCase() === column?.toLowerCase()
+          )?.type;
+
+          if (operator.toUpperCase() === "BETWEEN") {
+            if (!value1) {
+              const sampleValues = getUniqueValues(column, columnType);
+              return {
+                from: word?.from ?? cursorPos,
+                options: sampleValues.map((value) => ({
+                  label: value,
+                  type: "value",
+                  apply: value + " AND ",
+                  detail: "First value for BETWEEN",
+                })),
+              };
+            } else {
+              const sampleValues = getUniqueValues(column, columnType);
+              return {
+                from: word?.from ?? cursorPos,
+                options: sampleValues.map((value) => ({
+                  label: value,
+                  type: "value",
+                  apply: value,
+                  detail: "Second value for BETWEEN",
+                })),
+              };
+            }
+          }
+
+          if (operator.toUpperCase() === "LIKE") {
+            const likePatterns = getLikePatternSuggestions(column, columnType);
+            return {
+              from: word?.from ?? cursorPos,
+              options: likePatterns.map((pattern) => ({
+                label: pattern,
+                type: "value",
+                apply: pattern,
+                detail: "LIKE pattern",
+              })),
+            };
+          }
+
+          if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
+            return {
+              from: word?.from ?? cursorPos,
+              options: [
+                {
+                  label: "THEN",
+                  type: "keyword",
+                  apply: " THEN ",
+                  detail: "Specify output for condition",
+                },
+              ],
+            };
+          }
+
+          const sampleValues = getUniqueValues(column, columnType);
+          return {
+            from: word?.from ?? cursorPos,
+            options: sampleValues.map((value) => ({
+              label: value,
+              type: "value",
+              apply: value + " ",
+              detail: "Value",
+            })),
+          };
+        }
+      }
+
+      // 29. After CASE WHEN column operator value, suggest THEN
+      if (
+        /^select\s+.*?\bcase\s+when\s+\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+          docText
+        ) ||
+        /^select\s+.*?\bcase\s+when\s+\w+\s*between\s*('[^']*'|[^' ]\w*)\s*and\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+          docText
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "THEN",
+              type: "keyword",
+              apply: " THEN ",
+              detail: "Specify output for condition",
+            },
+          ],
+        };
+      }
+
+      // 30. After THEN, suggest values or columns
+      if (/^select\s+.*?\bcase\s+when\s+.*?\s+then\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            ...getColumnOptions([]),
+            ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
+              label: val,
+              type: "value",
+              apply: val + " ",
+              detail: "Output value",
+            })),
+          ],
+        };
+      }
+
+      if (
+        /^select\s+.*?\bcase\s+when\s+.*?\s+then\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+          docText
+        ) ||
+        /^select\s+.*?\bcase\s+when\s+.*?\s+else\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+          docText
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "WHEN",
+              type: "keyword",
+              apply: " WHEN ",
+              detail: "Add another condition",
+            },
+            {
+              label: "ELSE",
+              type: "keyword",
+              apply: " ELSE ",
+              detail: "Specify default output",
+            },
+            {
+              label: "END",
+              type: "keyword",
+              apply: " END ",
+              detail: "Close CASE statement",
+            },
+          ],
+        };
+      }
+
+      // 32. After ELSE, suggest values or columns
+      if (/^select\s+.*?\bcase\s+when\s+.*?\s+else\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            ...getColumnOptions([]),
+            ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
+              label: val,
+              type: "value",
+              apply: val + " ",
+              detail: "Default output value",
+            })),
+          ],
+        };
+      }
+
+      // 33. After END, suggest AS, comma, or FROM
+      if (/^select\s+.*?\bcase\s+when\s+.*?\s+end\s*$/i.test(docText)) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "AS",
+              type: "keyword",
+              apply: " AS 'Output' ",
+              detail: "Alias the CASE statement",
+            },
+            {
+              label: ",",
+              type: "operator",
+              apply: ", ",
+              detail: "Add another field",
+            },
+            {
+              label: "FROM",
+              type: "keyword",
+              apply: " FROM ",
+              detail: "Specify table",
+            },
+          ],
+        };
+      }
+
+      // 34. After END AS 'alias', suggest comma or FROM
+      if (
+        /^select\s+.*?\bcase\s+when\s+.*?\s+end\s+as\s+'.*?'\s*$/i.test(docText)
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: ",",
+              type: "operator",
+              apply: ", ",
+              detail: "Add another field",
+            },
+            {
+              label: "FROM",
+              type: "keyword",
+              apply: " FROM ",
+              detail: "Specify table",
+            },
+          ],
         };
       }
 
