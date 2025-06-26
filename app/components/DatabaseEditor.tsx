@@ -568,6 +568,7 @@ export default function SqlEditor() {
               (col) => col.name.toLowerCase() === field.toLowerCase()
             )
         );
+
         if (invalidGroupByFields.length > 0) {
           setResult(
             `Error: Invalid column(s) in GROUP BY: ${invalidGroupByFields.join(
@@ -585,6 +586,7 @@ export default function SqlEditor() {
         const missingGroupByFields = nonAggregateFieldNames.filter(
           (f) => !groupByFieldNames.includes(f)
         );
+
         if (missingGroupByFields.length > 0) {
           setResult(
             `Error: Non-aggregated columns (${missingGroupByFields.join(
@@ -2113,7 +2115,6 @@ export default function SqlEditor() {
           return false;
         }
 
-        // Define field structure to include CASE statements
         const fields: Array<{
           name: string;
           alias?: string;
@@ -2129,7 +2130,6 @@ export default function SqlEditor() {
         }> = [];
         const aliases: { [key in keyof PowerRanger]?: string } = {};
 
-        // Parse fields, including CASE statements
         for (const field of rawFieldsWithAliases) {
           const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
           let fieldName = field;
@@ -2149,7 +2149,6 @@ export default function SqlEditor() {
             alias = asMatch[2];
           }
 
-          // Detect and parse CASE statement
           const caseMatch = fieldName.match(
             /^case\s+((?:when\s+\w+\s*(?:=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:'[^']*'|[^' ]\w*)\s*(?:and\s*(?:'[^']*'|[^' ]\w*)\s*)?then\s*(?:'[^']*'|[^' ]\w*)\s*)+)(?:else\s*('[^']*'|[^' ]\w*)\s*)?end$/i
           );
@@ -2159,10 +2158,10 @@ export default function SqlEditor() {
             const conditionsStr = caseMatch[1];
             elseOutput = caseMatch[2];
 
-            // Parse WHEN clauses
             const whenMatches = conditionsStr.matchAll(
               /when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*(?:and\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*)?then\s*('[^']*'|[^' ]\w*)/gi
             );
+
             for (const whenMatch of whenMatches) {
               const [, column, operator, value1, value2, output] = whenMatch;
               if (
@@ -2199,7 +2198,6 @@ export default function SqlEditor() {
           }
         }
 
-        // Validate fields
         const uniqueFields = new Set(fields.map((f) => f.name));
         if (uniqueFields.size !== fields.length) {
           setResult("Error: Duplicate field names are not allowed");
@@ -2356,7 +2354,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Generate results, evaluating CASE statements
         let resultData: Partial<PowerRanger>[] = filteredData.map((row) => {
           const resultRow: Record<string, string | number | null> = {};
           fields.forEach((field) => {
