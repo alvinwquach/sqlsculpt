@@ -2135,7 +2135,7 @@ export default function SqlEditor() {
           let fieldName = field;
           let alias: string | undefined;
           let isCase = false;
-          let caseConditions: Array<{
+          const caseConditions: Array<{
             column: string;
             operator: string;
             value1?: string;
