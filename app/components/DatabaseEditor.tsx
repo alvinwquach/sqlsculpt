@@ -428,12 +428,11 @@ export default function SqlEditor() {
     pattern: string
   ): boolean => {
     const cleanPattern = pattern.replace(/^'|'$/g, "");
-    const regexPattern = cleanPattern
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/%/g, ".*")
-      .replace(/_/g, ".");
     const regex = new RegExp(
-      `^${pattern.replace(/%/g, ".*").replace(/_/g, ".")}$`,
+      `^${cleanPattern
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/%/g, ".*")
+        .replace(/_/g, ".")}$`,
       "i"
     );
     return regex.test(String(columnValue));
@@ -562,6 +561,12 @@ export default function SqlEditor() {
     operator: string,
     table: PowerRangersData
   ): boolean => {
+    if (!table.columns.some((col) => col.name === column)) {
+      throw new Error(
+        `Column '${column}' does not exist in table '${table.tableName}'`
+      );
+    }
+
     const columnValue = row[column as keyof PowerRanger];
     return operator.toUpperCase() === "IS NULL"
       ? columnValue === null || columnValue === undefined
@@ -592,7 +597,6 @@ export default function SqlEditor() {
         return true;
       }
 
-      // Handle DESCRIBE <table>
       const describeMatch = lowerQuery.match(/^describe\s+(\w+)\s*;?$/i);
       if (describeMatch) {
         const tableName = describeMatch[1].toLowerCase();
@@ -702,7 +706,6 @@ export default function SqlEditor() {
         return false;
       }
 
-      // Handle GROUP BY queries
       if (groupByMatch) {
         const [
           ,
@@ -1324,7 +1327,6 @@ export default function SqlEditor() {
         return true;
       }
 
-      // Handle aggregate queries (SUM, COUNT, MAX, MIN, AVG, ROUND)
       const handleAggregate = (
         match: RegExpMatchArray,
         aggregateType: string,
@@ -1781,7 +1783,6 @@ export default function SqlEditor() {
         );
       }
 
-      // Handle SELECT and SELECT DISTINCT
       if (selectMatch || selectDistinctMatch) {
         const isDistinct = !!selectDistinctMatch;
         const match = selectDistinctMatch || selectMatch;
@@ -1920,7 +1921,7 @@ export default function SqlEditor() {
           return false;
         }
 
-        let actualFields = fields
+        const actualFields = fields
           .filter((f) => !f.isCase)
           .map((f) => f.name)
           .flatMap((f) =>
@@ -2089,7 +2090,9 @@ export default function SqlEditor() {
                       table
                     );
                   }
-                } else if (["IS NULL", "IS NOT NULL"].includes(condition.operator)) {
+                } else if (
+                  ["IS NULL", "IS NOT NULL"].includes(condition.operator)
+                ) {
                   conditionMet = evaluateNullCondition(
                     row,
                     condition.column,
@@ -2135,7 +2138,7 @@ export default function SqlEditor() {
                 .reduce((obj, key) => {
                   obj[key] = row[key];
                   return obj;
-                }, {} as Record<string, any>)
+                }, {} as Record<string, string | number | string[] | null>)
             );
             if (seen.has(key)) {
               return false;
@@ -2160,7 +2163,6 @@ export default function SqlEditor() {
             setTooltip(null);
           }
         }
-
         if (orderByColumn) {
           const columnType = table.columns.find(
             (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
@@ -2417,12 +2419,11 @@ export default function SqlEditor() {
       const fullDocText = ctx.state.doc.toString();
       const cursorPos = ctx.pos;
 
-      // Extract table name from query
       const tableMatch = fullDocText.match(/from\s+(\w+)/i);
       const tableName = tableMatch ? tableMatch[1].toLowerCase() : null;
       const table = tableName
         ? tables[tableName]
-        : tables["mighty_morphin_power_rangers"]; // Default to one table if none specified
+        : tables["mighty_morphin_power_rangers"];
 
       if (!table) {
         return null;
