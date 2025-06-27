@@ -14,37 +14,49 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { keymap } from "@codemirror/view";
 import { Braces, TableIcon } from "lucide-react";
 
+interface CompletionOption {
+  label: string;
+  type: string;
+  apply: string;
+  detail: string;
+  boost?: number;
+}
+
 interface PowerRanger {
   id: number;
   user: string;
   ranger_color: string;
-  zord: string;
-  weapon: string;
-  season: string;
+  ranger_designation: string;
+  weapon: string[];
+  season_id: number;
   joined_date: string;
   status: string;
   power_level: number;
   location: string;
+  gear: string[];
+  zord: string[];
+}
+
+interface ColumnDef {
+  name: string;
+  type: "integer" | "float" | "text" | "date" | "text[]";
+  notNull: boolean;
 }
 
 interface PowerRangersData {
   tableName: string;
+  columns: ColumnDef[];
   data: PowerRanger[];
-  columns: Array<{
-    name: string;
-    type: string;
-    notNull: boolean;
-  }>;
+}
+
+interface ShowTablesResult {
+  table_name: string;
 }
 
 interface DescribeResult {
   field: string;
   type: string;
-  null: string;
-}
-
-interface ShowTablesResult {
-  table_name: string;
+  null: "YES" | "NO";
 }
 
 type QueryResult =
@@ -57,106 +69,287 @@ type QueryResult =
   | { min: number }
   | { avg: number };
 
-export const powerRangersData: PowerRangersData = {
-  tableName: "power_rangers",
-  data: [
-    {
-      id: 1,
-      user: "Jason Lee Scott",
-      ranger_color: "Red",
-      zord: "Tyrannosaurus",
-      weapon: "Power Sword",
-      season: "Mighty Morphin",
-      joined_date: "1993-08-28",
-      status: "Active",
-      power_level: 90.24321,
-      location: "Angel Grove",
-    },
-    {
-      id: 2,
-      user: "Trini Kwan",
-      ranger_color: "Yellow",
-      zord: "Saber-Toothed Tiger",
-      weapon: "Power Daggers",
-      season: "Mighty Morphin",
-      joined_date: "1993-08-28",
-      status: "Active",
-      power_level: 85.4754,
-      location: "Angel Grove",
-    },
-    {
-      id: 3,
-      user: "Billy Cranston",
-      ranger_color: "Blue",
-      zord: "Triceratops",
-      weapon: "Power Lance",
-      season: "Mighty Morphin",
-      joined_date: "1993-08-28",
-      status: "Active",
-      power_level: 80.24,
-      location: "Angel Grove",
-    },
-    {
-      id: 4,
-      user: "Kimberly Hart",
-      ranger_color: "Pink",
-      zord: "Pterodactyl",
-      weapon: "Power Bow",
-      season: "Mighty Morphin",
-      joined_date: "1993-08-28",
-      status: "Active",
-      power_level: 88,
-      location: "Angel Grove",
-    },
-    {
-      id: 5,
-      user: "Zack Taylor",
-      ranger_color: "Black",
-      zord: "Mastodon",
-      weapon: "Power Axe",
-      season: "Mighty Morphin",
-      joined_date: "1993-08-28",
-      status: "Active",
-      power_level: 82,
-      location: "Angel Grove",
-    },
-    {
-      id: 6,
-      user: "Tommy Oliver",
-      ranger_color: "Green",
-      zord: "Dragonzord",
-      weapon: "Dragon Dagger",
-      season: "Mighty Morphin",
-      joined_date: "1993-10-10",
-      status: "Active",
-      power_level: 95,
-      location: "Angel Grove",
-    },
-    {
-      id: 7,
-      user: "Tommy Oliver",
-      ranger_color: "White",
-      zord: "White Tigerzord",
-      weapon: "Saba",
-      season: "Mighty Morphin",
-      joined_date: "1994-01-10",
-      status: "Active",
-      power_level: 97,
-      location: "Angel Grove",
-    },
-  ],
-  columns: [
-    { name: "id", type: "integer", notNull: true },
-    { name: "user", type: "text", notNull: true },
-    { name: "ranger_color", type: "text", notNull: true },
-    { name: "zord", type: "text", notNull: true },
-    { name: "weapon", type: "text", notNull: true },
-    { name: "season", type: "text", notNull: true },
-    { name: "joined_date", type: "date", notNull: true },
-    { name: "status", type: "text", notNull: true },
-    { name: "power_level", type: "integer", notNull: true },
-    { name: "location", type: "text", notNull: true },
-  ],
+const tables: Record<string, PowerRangersData> = {
+  mighty_morphin_power_rangers: {
+    tableName: "mighty_morphin_power_rangers",
+    columns: [
+      { name: "id", type: "integer", notNull: true },
+      { name: "user", type: "text", notNull: true },
+      { name: "ranger_color", type: "text", notNull: true },
+      { name: "ranger_designation", type: "text", notNull: true },
+      { name: "weapon", type: "text[]", notNull: true },
+      { name: "season_id", type: "integer", notNull: true },
+      { name: "joined_date", type: "date", notNull: true },
+      { name: "status", type: "text", notNull: true },
+      { name: "power_level", type: "float", notNull: true },
+      { name: "location", type: "text", notNull: true },
+      { name: "gear", type: "text[]", notNull: true },
+      { name: "zord", type: "text[]", notNull: true },
+    ],
+    data: [
+      {
+        id: 1,
+        user: "Jason Lee Scott",
+        ranger_color: "Red",
+        ranger_designation: "Red Power Ranger",
+        weapon: [
+          "Power Sword",
+          "Blade Blaster",
+          "Dragon Dagger (post Green Ranger)",
+        ],
+        season_id: 1,
+        joined_date: "1993-08-28",
+        status: "Active",
+        power_level: 90.24321,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Power Morpher with Power Coin",
+          "Dragon Shield (post Green Ranger)",
+        ],
+        zord: [
+          "Tyrannosaurus Dinozord",
+          "Dragonzord (post Green Ranger)",
+          "Red Dragon Thunderzord",
+        ],
+      },
+      {
+        id: 2,
+        user: "Zack Taylor",
+        ranger_color: "Black",
+        ranger_designation: "Black Power Ranger",
+        weapon: ["Power Axe", "Blade Blaster"],
+        season_id: 1,
+        joined_date: "1993-08-28",
+        status: "Active",
+        power_level: 82,
+        location: "Angel Grove",
+        gear: ["Wrist Communicator", "Power Morpher with Power Coin"],
+        zord: ["Mastodon Dinozord", "Lion Thunderzord"],
+      },
+      {
+        id: 3,
+        user: "Trini Kwan",
+        ranger_color: "Yellow",
+        ranger_designation: "Yellow Power Ranger",
+        weapon: ["Power Daggers", "Blade Blaster"],
+        season_id: 1,
+        joined_date: "1993-08-28",
+        status: "Active",
+        power_level: 85.4754,
+        location: "Angel Grove",
+        gear: ["Wrist Communicator", "Power Morpher with Power Coin"],
+        zord: ["Sabertooth Tiger Dinozord", "Griffin Thunderzord"],
+      },
+      {
+        id: 4,
+        user: "Kimberly Hart",
+        ranger_color: "Pink",
+        ranger_designation: "Pink Power Ranger, Pink Ninja Ranger",
+        weapon: ["Power Bow", "Blade Blaster"],
+        season_id: 1,
+        joined_date: "1993-08-28",
+        status: "Active",
+        power_level: 88,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Power Morpher with Power Coin",
+          "Pink Shark Cycle",
+        ],
+        zord: [
+          "Pterodactyl Dinozord",
+          "Firebird Thunderzord",
+          "Crane Ninja Zord",
+          "White Shogun Zord (shared with White Ranger)",
+        ],
+      },
+      {
+        id: 5,
+        user: "Billy Cranston",
+        ranger_color: "Blue",
+        ranger_designation: "Blue Power Ranger, Blue Ninja Ranger",
+        weapon: ["Power Lance", "Blade Blaster"],
+        season_id: 1,
+        joined_date: "1993-08-28",
+        status: "Active",
+        power_level: 80.24,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Power Morpher with Power Coin",
+          "Metallic Armor",
+          "Blue Shark Cycle",
+        ],
+        zord: [
+          "Triceratops Dinozord",
+          "Unicorn Thunderzord",
+          "Wolf Ninja Zord",
+          "Blue Shogun Zord",
+        ],
+      },
+      {
+        id: 6,
+        user: "Tommy Oliver",
+        ranger_color: "Green",
+        ranger_designation: "Green Power Ranger",
+        weapon: ["Dragon Dagger"],
+        season_id: 1,
+        joined_date: "1993-10-10",
+        status: "Active",
+        power_level: 95,
+        location: "Angel Grove",
+        gear: [
+          "Dragon Shield",
+          "Power Morpher with Power Coin",
+          "Wrist Communicator",
+        ],
+        zord: ["Dragonzord"],
+      },
+      {
+        id: 7,
+        user: "Tommy Oliver",
+        ranger_color: "White",
+        ranger_designation: "White Power Ranger, White Ninja Ranger",
+        weapon: ["Saba"],
+        season_id: 1,
+        joined_date: "1994-01-10",
+        status: "Active",
+        power_level: 97,
+        location: "Angel Grove",
+        gear: [
+          "White Ranger Shield",
+          "Power Morpher with Power Coin",
+          "White Shark Cycle",
+          "Wrist Communicator",
+        ],
+        zord: ["Tigerzord", "Falconzord", "White Shogunzord"],
+      },
+    ],
+  },
+  power_rangers_zeo: {
+    tableName: "power_rangers_zeo",
+    columns: [
+      { name: "id", type: "integer", notNull: true },
+      { name: "user", type: "text", notNull: true },
+      { name: "ranger_color", type: "text", notNull: true },
+      { name: "ranger_designation", type: "text", notNull: true },
+      { name: "weapon", type: "text[]", notNull: true },
+      { name: "season_id", type: "integer", notNull: true },
+      { name: "joined_date", type: "date", notNull: true },
+      { name: "status", type: "text", notNull: true },
+      { name: "power_level", type: "float", notNull: true },
+      { name: "location", type: "text", notNull: true },
+      { name: "gear", type: "text[]", notNull: true },
+      { name: "zord", type: "text[]", notNull: true },
+    ],
+    data: [
+      {
+        id: 8,
+        user: "Tommy Oliver",
+        ranger_color: "Red",
+        ranger_designation: "Zeo Ranger V - Red",
+        weapon: ["Zeo Pistol", "Zeo Blade", "Sword"],
+        season_id: 2, // Zeo
+        joined_date: "1996-04-20",
+        status: "Active",
+        power_level: 100,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Zeonizer with Zeo Crystal",
+          "Red Zeo Jet Cycle",
+        ],
+        zord: ["Zeo Zord Five", "Red Battlezord", "Super Zeo Zord Five"],
+      },
+      {
+        id: 9,
+        user: "Rocky DeSantos",
+        ranger_color: "Blue",
+        ranger_designation: "Zeo Ranger III - Blue",
+        weapon: ["Zeo Pistol", "Zeo Blade", "Axes"],
+        season_id: 2,
+        joined_date: "1996-04-20",
+        status: "Active",
+        power_level: 98,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Zeonizer with Zeo Crystal",
+          "Blue Zeo Jet Cycle",
+        ],
+        zord: ["Zeo Zord Three", "Super Zeo Zord Three"],
+      },
+      {
+        id: 10,
+        user: "Adam Park",
+        ranger_color: "Green",
+        ranger_designation: "Zeo Ranger IV - Green",
+        weapon: ["Zeo Pistol", "Zeo Blade", "Hatchets"],
+        season_id: 2,
+        joined_date: "1996-04-20",
+        status: "Active",
+        power_level: 95,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Zeonizer with Zeo Crystal",
+          "Green Zeo Jet Cycle",
+        ],
+        zord: ["Zeo Zord Four", "Super Zeo Zord Four"],
+      },
+      {
+        id: 11,
+        user: "Katherine Hillard",
+        ranger_color: "Pink",
+        ranger_designation: "Zeo Ranger I - Pink",
+        weapon: ["Zeo Pistol", "Zeo Blade", "Disc"],
+        season_id: 2,
+        joined_date: "1996-04-20",
+        status: "Active",
+        power_level: 92,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Zeonizer with Zeo Crystal",
+          "Pink Zeo Jet Cycle",
+        ],
+        zord: ["Zeo Zord One", "Super Zeo Zord One"],
+      },
+      {
+        id: 12,
+        user: "Tanya Sloan",
+        ranger_color: "Yellow",
+        ranger_designation: "Zeo Ranger II - Yellow",
+        weapon: ["Zeo Pistol", "Zeo Blade", "Double-Clubs"],
+        season_id: 2,
+        joined_date: "1996-04-20",
+        status: "Active",
+        power_level: 90,
+        location: "Angel Grove",
+        gear: [
+          "Wrist Communicator",
+          "Zeonizer with Zeo Crystal",
+          "Yellow Zeo Jet Cycle",
+        ],
+        zord: ["Zeo Zord Two", "Super Zeo Zord Two"],
+      },
+      {
+        id: 13,
+        user: "Jason Lee Scott",
+        ranger_color: "Gold",
+        ranger_designation: "Gold Zeo Ranger",
+        weapon: ["Golden Power Staff"],
+        season_id: 2,
+        joined_date: "1996-04-20",
+        status: "Active",
+        power_level: 105,
+        location: "Angel Grove",
+        gear: ["Wrist Communicator", "Golden Shield"],
+        zord: ["Pyramidas", "Warrior Wheel"],
+      },
+    ],
+  },
 };
 
 interface ViewToggleProps {
@@ -213,9 +406,15 @@ export default function SqlEditor() {
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
   const [tooltip, setTooltip] = useState<string | null>("");
 
-  const uniqueSeasons = Array.from(
-    new Set(powerRangersData.data.map((row) => row.season))
-  ).sort();
+  const uniqueSeasons = (tableName: string): number[] => {
+    const table = tables[tableName.toLowerCase()];
+    if (!table) {
+      throw new Error(`Table '${tableName}' does not exist`);
+    }
+    return Array.from(
+      new Set(table.data.map((row: PowerRanger) => row.season_id))
+    ).sort((a, b) => a - b);
+  };
 
   const formatColumnName = (columnName: string): string => {
     return columnName
@@ -229,11 +428,13 @@ export default function SqlEditor() {
     pattern: string
   ): boolean => {
     const cleanPattern = pattern.replace(/^'|'$/g, "");
-    const regexPattern = cleanPattern
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/%/g, ".*")
-      .replace(/_/g, ".");
-    const regex = new RegExp(`^${regexPattern}$`, "i");
+    const regex = new RegExp(
+      `^${cleanPattern
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        .replace(/%/g, ".*")
+        .replace(/_/g, ".")}$`,
+      "i"
+    );
     return regex.test(String(columnValue));
   };
 
@@ -241,11 +442,13 @@ export default function SqlEditor() {
     row: PowerRanger,
     column: string,
     value1: string,
-    value2: string
+    value2: string,
+    table: PowerRangersData
   ): boolean => {
     const columnValue = row[column as keyof PowerRanger];
-    const columnType = powerRangersData.columns.find(
-      (col) => col.name === column
+    const columnType = table.columns.find(
+      (col: { name: string; type: string; notNull: boolean }) =>
+        col.name === column
     )?.type;
 
     const cleanValue1 = value1.replace(/^'|'$/g, "");
@@ -255,7 +458,7 @@ export default function SqlEditor() {
     let typedValue1: string | number;
     let typedValue2: string | number;
 
-    if (columnType === "integer") {
+    if (columnType === "integer" || columnType === "float") {
       typedColumnValue = Number(columnValue);
       typedValue1 = Number(cleanValue1);
       typedValue2 = Number(cleanValue2);
@@ -277,22 +480,36 @@ export default function SqlEditor() {
     row: PowerRanger,
     column: string,
     operator: string,
-    value: string
+    value: string,
+    table: PowerRangersData
   ): boolean => {
     const columnValue = row[column as keyof PowerRanger];
-    const columnType = powerRangersData.columns.find(
-      (col) => col.name === column
+    const columnType = table.columns.find(
+      (col: { name: string; type: string; notNull: boolean }) =>
+        col.name === column
     )?.type;
 
+    // Handle LIKE operator for text values only
     if (operator.toUpperCase() === "LIKE") {
-      return evaluateLikeCondition(columnValue, value);
+      if (columnType === "text" || columnType === "date") {
+        return evaluateLikeCondition(String(columnValue), value);
+      } else if (columnType === "text[]") {
+        const typedColumnValue = columnValue as string[];
+        if (Array.isArray(typedColumnValue)) {
+          return typedColumnValue.some((item) =>
+            evaluateLikeCondition(item, value)
+          );
+        }
+        return false;
+      }
+      return false;
     }
 
     const cleanValue = value.replace(/^'|'$/g, "");
-    let typedColumnValue: string | number;
+    let typedColumnValue: string | number | string[];
     let typedValue: string | number;
 
-    if (columnType === "integer") {
+    if (columnType === "integer" || columnType === "float") {
       typedColumnValue = Number(columnValue);
       typedValue = Number(cleanValue);
       if (isNaN(typedColumnValue) || isNaN(typedValue)) {
@@ -301,6 +518,21 @@ export default function SqlEditor() {
     } else if (columnType === "date" || columnType === "text") {
       typedColumnValue = String(columnValue);
       typedValue = cleanValue;
+    } else if (columnType === "text[]") {
+      typedColumnValue = columnValue as string[];
+      typedValue = cleanValue;
+
+      if (Array.isArray(typedColumnValue)) {
+        switch (operator.toUpperCase()) {
+          case "=":
+            return typedColumnValue.includes(typedValue);
+          case "!=":
+            return !typedColumnValue.includes(typedValue);
+          default:
+            return false;
+        }
+      }
+      return false;
     } else {
       return false;
     }
@@ -326,16 +558,19 @@ export default function SqlEditor() {
   const evaluateNullCondition = (
     row: PowerRanger,
     column: string,
-    operator: string
+    operator: string,
+    table: PowerRangersData
   ): boolean => {
+    if (!table.columns.some((col) => col.name === column)) {
+      throw new Error(
+        `Column '${column}' does not exist in table '${table.tableName}'`
+      );
+    }
+
     const columnValue = row[column as keyof PowerRanger];
-    if (operator.toUpperCase() === "IS NULL") {
-      return columnValue === null || columnValue === undefined;
-    }
-    if (operator.toUpperCase() === "IS NOT NULL") {
-      return columnValue !== null && columnValue !== undefined;
-    }
-    return false;
+    return operator.toUpperCase() === "IS NULL"
+      ? columnValue === null || columnValue === undefined
+      : columnValue !== null && columnValue !== undefined;
   };
 
   const runQuery = useCallback(
@@ -349,55 +584,111 @@ export default function SqlEditor() {
       }
 
       const lowerQuery = query.toLowerCase();
+
+      // Handle SHOW TABLES
       if (lowerQuery === "show tables") {
-        const showTablesResult: ShowTablesResult[] = [
-          { table_name: powerRangersData.tableName },
-        ];
+        const showTablesResult: ShowTablesResult[] = Object.keys(tables).map(
+          (tableName) => ({
+            table_name: tableName,
+          })
+        );
         setResult(JSON.stringify(showTablesResult, null, 2));
         setTooltip(null);
         return true;
       }
 
-      if (lowerQuery === "describe power_rangers") {
-        const describeResult: DescribeResult[] = powerRangersData.columns.map(
-          (col) => ({
-            field: col.name,
-            type: col.type,
-            null: col.notNull ? "NO" : "YES",
-          })
-        );
+      const describeMatch = lowerQuery.match(/^describe\s+(\w+)\s*;?$/i);
+      if (describeMatch) {
+        const tableName = describeMatch[1].toLowerCase();
+        const table = tables[tableName];
+        if (!table) {
+          setResult(`Error: Table '${tableName}' not found`);
+          setTooltip(null);
+          return false;
+        }
+        const describeResult: DescribeResult[] = table.columns.map((col) => ({
+          field: col.name,
+          type: col.type,
+          null: col.notNull ? "NO" : "YES",
+        }));
         setResult(JSON.stringify(describeResult, null, 2));
         setTooltip(null);
         return true;
       }
 
+      // Regex for various query types
+      const tableRegex = /from\s+(\w+)/i;
+      const tableMatch = query.match(tableRegex);
+      if (!tableMatch) {
+        setResult(
+          "Error: Query must include a valid FROM clause with a table name"
+        );
+        setTooltip(null);
+        return false;
+      }
+      const tableName = tableMatch[1].toLowerCase();
+      const table = tables[tableName];
+      if (!table) {
+        setResult(`Error: Table '${tableName}' not found`);
+        setTooltip(null);
+        return false;
+      }
+
       const sumMatch = query.match(
-        /^select\s+sum\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+sum\\s*\\((\\w+)\\)\\s*(?:as\\s+'([^']+)')?\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const countMatch = query.match(
-        /^select\s+count\s*\(([*]|\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+count\\s*\\(([*]|\\w+)\\)\\s*(?:as\\s+'([^']+)')?\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const maxMatch = query.match(
-        /^select\s+max\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+max\\s*\\((\\w+)\\)\\s*(?:as\\s+'([^']+)')?\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const minMatch = query.match(
-        /^select\s+min\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+min\\s*\\((\\w+)\\)\\s*(?:as\\s+'([^']+)')?\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const avgMatch = query.match(
-        /^select\s+avg\s*\((\w+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+avg\\s*\\((\\w+)\\)\\s*(?:as\\s+'([^']+)')?\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const roundMatch = query.match(
-        /^select\s+round\s*\((\w+),\s*(\d+)\)\s*(?:as\s+'([^']+)')?\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+round\\s*\\((\\w+),\\s*(\\d+)\\)\\s*(?:as\\s+'([^']+)')?\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const groupByMatch = query.match(
-        /^select\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+group\s+by\s+(.+?))(?:\s+having\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+(.+?)\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+group\\s+by\\s+(.+?))(?:\\s+having\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const selectDistinctMatch = query.match(
-        /^select\s+distinct\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+distinct\\s+(.+?)\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
       const selectMatch = query.match(
-        /^select\s+(.+?)\s+from\s+power_rangers(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+)(?:\s+(asc|desc))?)?(?:\s+limit\s+(\d+))?\s*;?$/i
+        new RegExp(
+          `^select\\s+(.+?)\\s+from\\s+${tableName}(?:\\s+where\\s+(.+?))?(?:\\s+order\\s+by\\s+(\\w+)(?:\\s+(ASC|DESC))?)?(?:\\s+limit\\s+(\\d+))?\\s*;?$`,
+          "i"
+        )
       );
+
       if (
         !selectMatch &&
         !selectDistinctMatch &&
@@ -409,10 +700,10 @@ export default function SqlEditor() {
         !groupByMatch
       ) {
         setResult(
-          "Error: Query must be 'SELECT [DISTINCT] <fields|CASE WHEN ... END> FROM power_rangers [WHERE <condition>] [GROUP BY <fields> [HAVING <condition>]] [ORDER BY <column> [ASC|DESC]] [LIMIT <number>]', 'SELECT COUNT(*) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT SUM(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MAX(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT MIN(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT AVG(<column>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'SELECT ROUND(<column>, <decimals>) FROM power_rangers [WHERE <condition>] [LIMIT <number>]', 'DESCRIBE power_rangers', or 'SHOW TABLES'"
+          "Error: Query must be 'SHOW TABLES', 'DESCRIBE <table>', or a valid SELECT query with supported clauses (SELECT, DISTINCT, COUNT, SUM, MAX, MIN, AVG, ROUND, GROUP BY, HAVING, WHERE, ORDER BY, LIMIT)"
         );
         setTooltip(null);
-        return true;
+        return false;
       }
 
       if (groupByMatch) {
@@ -494,7 +785,7 @@ export default function SqlEditor() {
               !innerAggregate)
           ) {
             if (
-              !powerRangersData.columns.some(
+              !table.columns.some(
                 (col) => col.name.toLowerCase() === fieldName.toLowerCase()
               )
             ) {
@@ -532,10 +823,13 @@ export default function SqlEditor() {
           .filter((f) => !f.isAggregate)
           .map((f) => f.name);
         const actualFields = nonAggregateFields.includes("*")
-          ? powerRangersData.columns.map((col) => col.name)
+          ? table.columns.map((col) => col.name)
           : nonAggregateFields;
         const invalidFields = actualFields.filter(
-          (field) => !powerRangersData.columns.some((col) => col.name === field)
+          (field) =>
+            !table.columns.some(
+              (col) => col.name.toLowerCase() === field.toLowerCase()
+            )
         );
         if (invalidFields.length > 0) {
           setResult(`Error: Invalid field(s): ${invalidFields.join(", ")}`);
@@ -564,11 +858,10 @@ export default function SqlEditor() {
 
         const invalidGroupByFields = groupByFields.filter(
           (field) =>
-            !powerRangersData.columns.some(
+            !table.columns.some(
               (col) => col.name.toLowerCase() === field.toLowerCase()
             )
         );
-
         if (invalidGroupByFields.length > 0) {
           setResult(
             `Error: Invalid column(s) in GROUP BY: ${invalidGroupByFields.join(
@@ -586,7 +879,6 @@ export default function SqlEditor() {
         const missingGroupByFields = nonAggregateFieldNames.filter(
           (f) => !groupByFieldNames.includes(f)
         );
-
         if (missingGroupByFields.length > 0) {
           setResult(
             `Error: Non-aggregated columns (${missingGroupByFields.join(
@@ -597,7 +889,7 @@ export default function SqlEditor() {
           return false;
         }
 
-        let filteredData = powerRangersData.data;
+        let filteredData = table.data;
         if (whereClause) {
           const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
           const conditions: Array<{
@@ -613,7 +905,7 @@ export default function SqlEditor() {
             if (i % 2 === 0) {
               const part = conditionParts[i].trim();
               const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s+AND\s+('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)$/i
               );
               if (betweenMatch) {
                 const [, column, value1, value2] = betweenMatch;
@@ -625,7 +917,7 @@ export default function SqlEditor() {
                 });
               } else {
                 const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))?$/i
                 );
                 if (!conditionMatch) {
                   setResult(
@@ -649,7 +941,7 @@ export default function SqlEditor() {
           for (const condition of conditions) {
             const { column } = condition;
             if (
-              !powerRangersData.columns.some(
+              !table.columns.some(
                 (col) => col.name.toLowerCase() === column.toLowerCase()
               )
             ) {
@@ -686,7 +978,8 @@ export default function SqlEditor() {
                     return evaluateNullCondition(
                       row,
                       cond.column,
-                      cond.operator
+                      cond.operator,
+                      table
                     );
                   } else if (cond.operator.toUpperCase() === "BETWEEN") {
                     if (!cond.value1 || !cond.value2) return false;
@@ -694,7 +987,8 @@ export default function SqlEditor() {
                       row,
                       cond.column,
                       cond.value1,
-                      cond.value2
+                      cond.value2,
+                      table
                     );
                   } else {
                     if (!cond.value1) return false;
@@ -702,7 +996,8 @@ export default function SqlEditor() {
                       row,
                       cond.column,
                       cond.operator,
-                      cond.value1
+                      cond.value1,
+                      table
                     );
                   }
                 });
@@ -732,10 +1027,12 @@ export default function SqlEditor() {
           groupedData[groupKey].push(row);
         });
 
-        let resultData: Record<string, string | number | null>[] = [];
+        let resultData: Record<string, string | number | string[] | null>[] =
+          [];
         for (const groupKey in groupedData) {
           const groupRows = groupedData[groupKey];
-          const resultRow: Record<string, string | number | null> = {};
+          const resultRow: Record<string, string | number | string[] | null> =
+            {};
 
           const groupValues = groupKey.split("|");
           groupByFields.forEach((field, index) => {
@@ -761,10 +1058,13 @@ export default function SqlEditor() {
                   ).length;
                 }
               } else if (field.aggregateType === "sum") {
-                const columnDef = powerRangersData.columns.find(
+                const columnDef = table.columns.find(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
-                if (!columnDef || columnDef.type !== "integer") {
+                if (
+                  !columnDef ||
+                  (columnDef.type !== "integer" && columnDef.type !== "float")
+                ) {
                   setResult(
                     `Error: SUM can only be applied to numeric columns: ${column}`
                   );
@@ -776,10 +1076,13 @@ export default function SqlEditor() {
                   return isNaN(val) ? acc : acc + val;
                 }, 0);
               } else if (field.aggregateType === "avg") {
-                const columnDef = powerRangersData.columns.find(
+                const columnDef = table.columns.find(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
-                if (!columnDef || columnDef.type !== "integer") {
+                if (
+                  !columnDef ||
+                  (columnDef.type !== "integer" && columnDef.type !== "float")
+                ) {
                   setResult(
                     `Error: AVG can only be applied to numeric columns: ${column}`
                   );
@@ -794,12 +1097,14 @@ export default function SqlEditor() {
                     ? values.reduce((acc, val) => acc + val, 0) / values.length
                     : null;
               } else if (field.aggregateType === "max") {
-                const columnDef = powerRangersData.columns.find(
+                const columnDef = table.columns.find(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
                 if (
                   !columnDef ||
-                  (columnDef.type !== "integer" && columnDef.type !== "date")
+                  (columnDef.type !== "integer" &&
+                    columnDef.type !== "float" &&
+                    columnDef.type !== "date")
                 ) {
                   setResult(
                     `Error: MAX can only be applied to numeric or date columns: ${column}`
@@ -807,7 +1112,10 @@ export default function SqlEditor() {
                   setTooltip(null);
                   return false;
                 }
-                if (columnDef.type === "integer") {
+                if (
+                  columnDef.type === "integer" ||
+                  columnDef.type === "float"
+                ) {
                   value = groupRows.reduce((acc, row) => {
                     const val = Number(row[column as keyof PowerRanger]);
                     return isNaN(val)
@@ -821,12 +1129,14 @@ export default function SqlEditor() {
                   }, null as string | null);
                 }
               } else if (field.aggregateType === "min") {
-                const columnDef = powerRangersData.columns.find(
+                const columnDef = table.columns.find(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
                 if (
                   !columnDef ||
-                  (columnDef.type !== "integer" && columnDef.type !== "date")
+                  (columnDef.type !== "integer" &&
+                    columnDef.type !== "float" &&
+                    columnDef.type !== "date")
                 ) {
                   setResult(
                     `Error: MIN can only be applied to numeric or date columns: ${column}`
@@ -834,7 +1144,10 @@ export default function SqlEditor() {
                   setTooltip(null);
                   return false;
                 }
-                if (columnDef.type === "integer") {
+                if (
+                  columnDef.type === "integer" ||
+                  columnDef.type === "float"
+                ) {
                   value = groupRows.reduce((acc, row) => {
                     const val = Number(row[column as keyof PowerRanger]);
                     return isNaN(val)
@@ -851,10 +1164,13 @@ export default function SqlEditor() {
                 field.aggregateType === "round" &&
                 field.innerAggregate === "avg"
               ) {
-                const columnDef = powerRangersData.columns.find(
+                const columnDef = table.columns.find(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
-                if (!columnDef || columnDef.type !== "integer") {
+                if (
+                  !columnDef ||
+                  (columnDef.type !== "integer" && columnDef.type !== "float")
+                ) {
                   setResult(
                     `Error: ROUND(AVG()) can only be applied to numeric columns: ${column}`
                   );
@@ -877,10 +1193,13 @@ export default function SqlEditor() {
                 }
                 value = Number(avg.toFixed(field.decimals || 0));
               } else if (field.aggregateType === "round") {
-                const columnDef = powerRangersData.columns.find(
+                const columnDef = table.columns.find(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 );
-                if (!columnDef || columnDef.type !== "integer") {
+                if (
+                  !columnDef ||
+                  (columnDef.type !== "integer" && columnDef.type !== "float")
+                ) {
                   setResult(
                     `Error: ROUND can only be applied to numeric columns: ${column}`
                   );
@@ -912,7 +1231,7 @@ export default function SqlEditor() {
 
         if (havingClause) {
           const havingMatch = havingClause.match(
-            /^(count|sum|max|min|avg)\s*\(([*]|\w+)\)\s*(=|\!=|>|<|>=|<=)\s*(\d+)$/i
+            /^(count|sum|max|min|avg)\s*\(([*]|\w+)\)\s*(=|\!=|>|<|>=|<=)\s*(\d+(?:\.\d+)?)$/i
           );
           if (!havingMatch) {
             setResult(`Error: Invalid HAVING clause: ${havingClause}`);
@@ -953,16 +1272,345 @@ export default function SqlEditor() {
         }
 
         if (orderByColumn) {
-          const columnType = powerRangersData.columns.find(
+          const columnType = table.columns.find(
             (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
           )?.type;
+          const alias = fields.find(
+            (f) => f.name.toLowerCase() === orderByColumn.toLowerCase()
+          )?.alias;
+          if (!columnType && !alias) {
+            setResult(`Error: Invalid column in ORDER BY: ${orderByColumn}`);
+            setTooltip(null);
+            return false;
+          }
 
           resultData.sort((a, b) => {
-            const aValue = a[orderByColumn] ?? "";
-            const bValue = b[orderByColumn] ?? "";
+            const actualColumn = alias || orderByColumn;
+            const aValue = a[actualColumn] ?? "";
+            const bValue = b[actualColumn] ?? "";
             let comparison = 0;
 
-            if (columnType === "integer") {
+            if (columnType === "integer" || columnType === "float") {
+              const aNum = Number(aValue);
+              const bNum = Number(bValue);
+              comparison = aNum - bNum;
+            } else if (columnType === "text[]") {
+              const aArray = Array.isArray(aValue) ? aValue : [];
+              const bArray = Array.isArray(bValue) ? bValue : [];
+              comparison = aArray.join(",").localeCompare(bArray.join(","));
+            } else {
+              comparison = String(aValue).localeCompare(String(bValue));
+            }
+
+            return orderByDirection === "DESC" ? -comparison : comparison;
+          });
+        }
+
+        if (limitValue !== undefined) {
+          const limit = parseInt(limitValue, 10);
+          if (isNaN(limit) || limit <= 0) {
+            setResult("Error: LIMIT must be a positive integer");
+            setTooltip(null);
+            return false;
+          }
+          resultData = resultData.slice(0, limit);
+        }
+
+        try {
+          setResult(JSON.stringify(resultData, null, 2));
+        } catch {
+          setResult("Error: Failed to generate valid JSON output");
+          setTooltip(null);
+          return false;
+        }
+        setTooltip(null);
+        return true;
+      }
+
+      const handleAggregate = (
+        match: RegExpMatchArray,
+        aggregateType: string,
+        column: string,
+        alias: string,
+        whereClause?: string,
+        orderByColumn?: string,
+        orderByDirection: string = "ASC",
+        limitValue?: string
+      ): boolean => {
+        let filteredData = table.data;
+
+        if (aggregateType !== "count" || column !== "*") {
+          const columnDef = table.columns.find(
+            (col) => col.name.toLowerCase() === column.toLowerCase()
+          );
+          if (!columnDef) {
+            setResult(
+              `Error: Invalid column in ${aggregateType.toUpperCase()}: ${column}`
+            );
+            setTooltip(null);
+            return false;
+          }
+          if (
+            (["sum", "avg", "round"].includes(aggregateType) &&
+              columnDef.type !== "integer" &&
+              columnDef.type !== "float") ||
+            (["max", "min"].includes(aggregateType) &&
+              columnDef.type !== "integer" &&
+              columnDef.type !== "float" &&
+              columnDef.type !== "date")
+          ) {
+            setResult(
+              `Error: ${aggregateType.toUpperCase()} can only be applied to ${
+                aggregateType === "max" || aggregateType === "min"
+                  ? "numeric or date"
+                  : "numeric"
+              } columns: ${column}`
+            );
+            setTooltip(null);
+            return false;
+          }
+        }
+
+        if (whereClause) {
+          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
+          const conditions: Array<{
+            column: string;
+            operator: string;
+            value1?: string;
+            value2?: string;
+            join?: "AND" | "OR";
+          }> = [];
+          const joinOperators: string[] = [];
+
+          for (let i = 0; i < conditionParts.length; i++) {
+            if (i % 2 === 0) {
+              const part = conditionParts[i].trim();
+              const betweenMatch = part.match(
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s+AND\s+('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)$/i
+              );
+              if (betweenMatch) {
+                const [, column, value1, value2] = betweenMatch;
+                conditions.push({
+                  column,
+                  operator: "BETWEEN",
+                  value1,
+                  value2,
+                });
+              } else {
+                const conditionMatch = part.match(
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))?$/i
+                );
+                if (!conditionMatch) {
+                  setResult(
+                    `Error: Invalid condition in WHERE clause: ${part}`
+                  );
+                  setTooltip(null);
+                  return false;
+                }
+                const [, column, operator, value1] = conditionMatch;
+                conditions.push({ column, operator, value1 });
+              }
+            } else {
+              joinOperators.push(conditionParts[i].toUpperCase());
+            }
+          }
+
+          for (let i = 0; i < conditions.length - 1; i++) {
+            conditions[i].join = joinOperators[i] as "AND" | "OR";
+          }
+
+          for (const condition of conditions) {
+            const { column } = condition;
+            if (
+              !table.columns.some(
+                (col) => col.name.toLowerCase() === column.toLowerCase()
+              )
+            ) {
+              setResult(`Error: Invalid column in WHERE clause: ${column}`);
+              setTooltip(null);
+              return false;
+            }
+          }
+
+          filteredData = filteredData.filter((row) => {
+            let result = true;
+            let currentGroup: Array<{
+              column: string;
+              operator: string;
+              value1?: string;
+              value2?: string;
+            }> = [];
+            let lastJoin: "AND" | "OR" | null = null;
+
+            for (const condition of conditions) {
+              const { column, operator, value1, value2, join } = condition;
+              currentGroup.push({ column, operator, value1, value2 });
+
+              if (
+                join ||
+                conditions.indexOf(condition) === conditions.length - 1
+              ) {
+                const groupResult = currentGroup.every((cond) => {
+                  if (
+                    ["IS NULL", "IS NOT NULL"].includes(
+                      cond.operator.toUpperCase()
+                    )
+                  ) {
+                    return evaluateNullCondition(
+                      row,
+                      cond.column,
+                      cond.operator,
+                      table
+                    );
+                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
+                    if (!cond.value1 || !cond.value2) return false;
+                    return evaluateBetweenCondition(
+                      row,
+                      cond.column,
+                      cond.value1,
+                      cond.value2,
+                      table
+                    );
+                  } else {
+                    if (!cond.value1) return false;
+                    return evaluateCondition(
+                      row,
+                      cond.column,
+                      cond.operator,
+                      cond.value1,
+                      table
+                    );
+                  }
+                });
+
+                if (lastJoin === "OR") {
+                  result = result || groupResult;
+                } else {
+                  result = result && groupResult;
+                }
+
+                currentGroup = [];
+                lastJoin = join || null;
+              }
+            }
+            return result;
+          });
+        }
+
+        let resultData: Record<string, string | number | string[] | null>[] =
+          [];
+        if (aggregateType === "sum") {
+          const sum = filteredData.reduce((acc, row) => {
+            const value = Number(row[column as keyof PowerRanger]);
+            return isNaN(value) ? acc : acc + value;
+          }, 0);
+          resultData = [{ [alias]: sum }];
+        } else if (aggregateType === "count") {
+          const count =
+            column === "*"
+              ? filteredData.length
+              : filteredData.filter(
+                  (row) =>
+                    row[column as keyof PowerRanger] !== null &&
+                    row[column as keyof PowerRanger] !== undefined
+                ).length;
+          resultData = [{ [alias]: count }];
+        } else if (aggregateType === "max") {
+          const columnDef = table.columns.find(
+            (col) => col.name.toLowerCase() === column.toLowerCase()
+          );
+          let max: number | string | null = null;
+          if (columnDef?.type === "integer" || columnDef?.type === "float") {
+            max = filteredData.reduce((acc, row) => {
+              const value = Number(row[column as keyof PowerRanger]);
+              return isNaN(value)
+                ? acc
+                : Math.max(acc || Number.NEGATIVE_INFINITY, value);
+            }, null as number | null);
+          } else if (columnDef?.type === "date") {
+            max = filteredData.reduce((acc, row) => {
+              const value = String(row[column as keyof PowerRanger]);
+              return acc === null || value > acc ? value : acc;
+            }, null as string | null);
+          }
+          if (max === null) {
+            setResult(`Error: No valid values found for MAX(${column})`);
+            setTooltip(null);
+            return false;
+          }
+          resultData = [{ [alias]: max }];
+        } else if (aggregateType === "min") {
+          const columnDef = table.columns.find(
+            (col) => col.name.toLowerCase() === column.toLowerCase()
+          );
+          let min: number | string | null = null;
+          if (columnDef?.type === "integer" || columnDef?.type === "float") {
+            min = filteredData.reduce((acc, row) => {
+              const value = Number(row[column as keyof PowerRanger]);
+              return isNaN(value)
+                ? acc
+                : Math.min(acc || Number.POSITIVE_INFINITY, value);
+            }, null as number | null);
+          } else if (columnDef?.type === "date") {
+            min = filteredData.reduce((acc, row) => {
+              const value = String(row[column as keyof PowerRanger]);
+              return acc === null || value < acc ? value : acc;
+            }, null as string | null);
+          }
+          if (min === null) {
+            setResult(`Error: No valid values found for MIN(${column})`);
+            setTooltip(null);
+            return false;
+          }
+          resultData = [{ [alias]: min }];
+        } else if (aggregateType === "avg") {
+          const values = filteredData
+            .map((row) => Number(row[column as keyof PowerRanger]))
+            .filter((value) => !isNaN(value));
+          const avg =
+            values.length > 0
+              ? values.reduce((acc, val) => acc + val, 0) / values.length
+              : null;
+          if (avg === null) {
+            setResult(`Error: No valid values found for AVG(${column})`);
+            setTooltip(null);
+            return false;
+          }
+          resultData = [{ [alias]: avg }];
+        } else if (aggregateType === "round") {
+          const decimalPlaces = parseInt(match[2], 10);
+          if (isNaN(decimalPlaces) || decimalPlaces < 0) {
+            setResult(
+              "Error: ROUND requires a non-negative integer for decimal places"
+            );
+            setTooltip(null);
+            return false;
+          }
+          resultData = filteredData.map((row) => {
+            const value = Number(row[column as keyof PowerRanger]);
+            if (isNaN(value)) {
+              return { [alias]: null };
+            }
+            return { [alias]: Number(value.toFixed(decimalPlaces)) };
+          });
+        }
+
+        if (orderByColumn) {
+          const columnType = table.columns.find(
+            (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
+          )?.type;
+          if (!columnType) {
+            setResult(`Error: Invalid column in ORDER BY: ${orderByColumn}`);
+            setTooltip(null);
+            return false;
+          }
+
+          resultData.sort((a, b) => {
+            const aValue = a[alias] ?? "";
+            const bValue = b[alias] ?? "";
+            let comparison = 0;
+
+            if (columnType === "integer" || columnType === "float") {
               const aNum = Number(aValue);
               const bNum = Number(bValue);
               comparison = aNum - bNum;
@@ -993,1100 +1641,146 @@ export default function SqlEditor() {
         }
         setTooltip(null);
         return true;
-      }
+      };
 
       if (sumMatch) {
         if (lowerQuery.includes("group by")) {
-          return false;
-        }
-        const [, sumColumn, alias = "sum", whereClause, limitValue] = sumMatch;
-        let filteredData = powerRangersData.data;
-
-        const columnDef = powerRangersData.columns.find(
-          (col) => col.name.toLowerCase() === sumColumn.toLowerCase()
-        );
-        if (!columnDef) {
-          setResult(`Error: Invalid column in SUM: ${sumColumn}`);
-          setTooltip(null);
-          return false;
-        }
-        if (columnDef.type !== "integer") {
           setResult(
-            `Error: SUM can only be applied to numeric columns: ${sumColumn}`
+            "Error: SUM with GROUP BY not supported in this format; use GROUP BY syntax"
           );
           setTooltip(null);
           return false;
         }
-
-        if (whereClause) {
-          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-          const conditions: Array<{
-            column: string;
-            operator: string;
-            value1?: string;
-            value2?: string;
-            join?: "AND" | "OR";
-          }> = [];
-          const joinOperators: string[] = [];
-
-          for (let i = 0; i < conditionParts.length; i++) {
-            if (i % 2 === 0) {
-              const part = conditionParts[i].trim();
-              const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-              );
-              if (betweenMatch) {
-                const [, column, value1, value2] = betweenMatch;
-                conditions.push({
-                  column,
-                  operator: "BETWEEN",
-                  value1,
-                  value2,
-                });
-              } else {
-                const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-                );
-                if (!conditionMatch) {
-                  setResult(
-                    `Error: Invalid condition in WHERE clause: ${part}`
-                  );
-                  setTooltip(null);
-                  return false;
-                }
-                const [, column, operator, value1] = conditionMatch;
-                conditions.push({ column, operator, value1 });
-              }
-            } else {
-              joinOperators.push(conditionParts[i].toUpperCase());
-            }
-          }
-
-          for (let i = 0; i < conditions.length - 1; i++) {
-            conditions[i].join = joinOperators[i] as "AND" | "OR";
-          }
-
-          for (const condition of conditions) {
-            const { column } = condition;
-            if (
-              !powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === column.toLowerCase()
-              )
-            ) {
-              setResult(`Error: Invalid column in WHERE clause: ${column}`);
-              setTooltip(null);
-              return false;
-            }
-          }
-
-          filteredData = filteredData.filter((row) => {
-            let result = true;
-            let currentGroup: Array<{
-              column: string;
-              operator: string;
-              value1?: string;
-              value2?: string;
-            }> = [];
-            let lastJoin: "AND" | "OR" | null = null;
-
-            for (const condition of conditions) {
-              const { column, operator, value1, value2, join } = condition;
-              currentGroup.push({ column, operator, value1, value2 });
-
-              if (
-                join ||
-                conditions.indexOf(condition) === conditions.length - 1
-              ) {
-                const groupResult = currentGroup.every((cond) => {
-                  if (
-                    ["IS NULL", "IS NOT NULL"].includes(
-                      cond.operator.toUpperCase()
-                    )
-                  ) {
-                    return evaluateNullCondition(
-                      row,
-                      cond.column,
-                      cond.operator
-                    );
-                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                    if (!cond.value1 || !cond.value2) return false;
-                    return evaluateBetweenCondition(
-                      row,
-                      cond.column,
-                      cond.value1,
-                      cond.value2
-                    );
-                  } else {
-                    if (!cond.value1) return false;
-                    return evaluateCondition(
-                      row,
-                      cond.column,
-                      cond.operator,
-                      cond.value1
-                    );
-                  }
-                });
-
-                if (lastJoin === "OR") {
-                  result = result || groupResult;
-                } else {
-                  result = result && groupResult;
-                }
-
-                currentGroup = [];
-                lastJoin = join || null;
-              }
-            }
-            return result;
-          });
-        }
-
-        const sum = filteredData.reduce((acc, row) => {
-          const value = Number(row[sumColumn as keyof PowerRanger]);
-          return isNaN(value) ? acc : acc + value;
-        }, 0);
-
-        const resultData = [{ [alias]: sum }];
-
-        if (limitValue !== undefined) {
-          const limit = parseInt(limitValue, 10);
-          if (isNaN(limit) || limit <= 0) {
-            setResult("Error: LIMIT must be a positive integer");
-            setTooltip(null);
-            return false;
-          }
-          resultData.splice(limit);
-        }
-
-        try {
-          setResult(JSON.stringify(resultData, null, 2));
-        } catch {
-          setResult("Error: Failed to generate valid JSON output");
-          setTooltip(null);
-          return false;
-        }
-        setTooltip(null);
-        return true;
+        const [
+          ,
+          column,
+          alias = "sum",
+          whereClause,
+          ,
+          orderByDirection,
+          limitValue,
+        ] = sumMatch;
+        return handleAggregate(
+          sumMatch,
+          "sum",
+          column,
+          alias,
+          whereClause,
+          column,
+          orderByDirection,
+          limitValue
+        );
       }
 
       if (countMatch) {
-        const [, countArg, alias = "count", whereClause, limitValue] =
-          countMatch;
-        let filteredData = powerRangersData.data;
-
-        if (whereClause) {
-          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-          const conditions: Array<{
-            column: string;
-            operator: string;
-            value1?: string;
-            value2?: string;
-            join?: "AND" | "OR";
-          }> = [];
-          const joinOperators: string[] = [];
-
-          for (let i = 0; i < conditionParts.length; i++) {
-            if (i % 2 === 0) {
-              const part = conditionParts[i].trim();
-              const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-              );
-              if (betweenMatch) {
-                const [, column, value1, value2] = betweenMatch;
-                conditions.push({
-                  column,
-                  operator: "BETWEEN",
-                  value1,
-                  value2,
-                });
-              } else {
-                const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-                );
-                if (!conditionMatch) {
-                  setResult(
-                    `Error: Invalid condition in WHERE clause: ${part}`
-                  );
-                  setTooltip(null);
-                  return false;
-                }
-                const [, column, operator, value1] = conditionMatch;
-                conditions.push({ column, operator, value1 });
-              }
-            } else {
-              joinOperators.push(conditionParts[i].toUpperCase());
-            }
-          }
-
-          for (let i = 0; i < conditions.length - 1; i++) {
-            conditions[i].join = joinOperators[i] as "AND" | "OR";
-          }
-
-          for (const condition of conditions) {
-            const { column } = condition;
-            if (
-              !powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === column.toLowerCase()
-              )
-            ) {
-              setResult(`Error: Invalid column in WHERE clause: ${column}`);
-              setTooltip(null);
-              return false;
-            }
-          }
-
-          filteredData = filteredData.filter((row) => {
-            let result = true;
-            let currentGroup: Array<{
-              column: string;
-              operator: string;
-              value1?: string;
-              value2?: string;
-            }> = [];
-            let lastJoin: "AND" | "OR" | null = null;
-
-            for (const condition of conditions) {
-              const { column, operator, value1, value2, join } = condition;
-              currentGroup.push({ column, operator, value1, value2 });
-
-              if (
-                join ||
-                conditions.indexOf(condition) === conditions.length - 1
-              ) {
-                const groupResult = currentGroup.every((cond) => {
-                  if (
-                    ["IS NULL", "IS NOT NULL"].includes(
-                      cond.operator.toUpperCase()
-                    )
-                  ) {
-                    return evaluateNullCondition(
-                      row,
-                      cond.column,
-                      cond.operator
-                    );
-                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                    if (!cond.value1 || !cond.value2) return false;
-                    return evaluateBetweenCondition(
-                      row,
-                      cond.column,
-                      cond.value1,
-                      cond.value2
-                    );
-                  } else {
-                    if (!cond.value1) return false;
-                    return evaluateCondition(
-                      row,
-                      cond.column,
-                      cond.operator,
-                      cond.value1
-                    );
-                  }
-                });
-
-                if (lastJoin === "OR") {
-                  result = result || groupResult;
-                } else {
-                  result = result && groupResult;
-                }
-
-                currentGroup = [];
-                lastJoin = join || null;
-              }
-            }
-            return result;
-          });
-        }
-
-        let count: number;
-        if (countArg === "*") {
-          count = filteredData.length;
-        } else {
-          if (
-            !powerRangersData.columns.some(
-              (col) => col.name.toLowerCase() === countArg.toLowerCase()
-            )
-          ) {
-            setResult(`Error: Invalid column in COUNT: ${countArg}`);
-            setTooltip(null);
-            return false;
-          }
-          count = filteredData.filter(
-            (row) =>
-              row[countArg as keyof PowerRanger] !== null &&
-              row[countArg as keyof PowerRanger] !== undefined
-          ).length;
-        }
-
-        const resultData = [{ [alias]: count }];
-
-        if (limitValue !== undefined) {
-          const limit = parseInt(limitValue, 10);
-          if (isNaN(limit) || limit <= 0) {
-            setResult("Error: LIMIT must be a positive integer");
-            setTooltip(null);
-            return false;
-          }
-          resultData.splice(limit);
-        }
-
-        try {
-          setResult(JSON.stringify(resultData, null, 2));
-        } catch {
-          setResult("Error: Failed to generate valid JSON output");
-          setTooltip(null);
-          return false;
-        }
-        setTooltip(null);
-        return true;
+        const [
+          ,
+          column,
+          alias = "count",
+          whereClause,
+          ,
+          orderByDirection,
+          limitValue,
+        ] = countMatch;
+        return handleAggregate(
+          countMatch,
+          "count",
+          column,
+          alias,
+          whereClause,
+          column,
+          orderByDirection,
+          limitValue
+        );
       }
 
       if (maxMatch) {
-        const [, maxColumn, alias = "max", whereClause, limitValue] = maxMatch;
-        let filteredData = powerRangersData.data;
-
-        const columnDef = powerRangersData.columns.find(
-          (col) => col.name.toLowerCase() === maxColumn.toLowerCase()
+        const [
+          ,
+          column,
+          alias = "max",
+          whereClause,
+          ,
+          orderByDirection,
+          limitValue,
+        ] = maxMatch;
+        return handleAggregate(
+          maxMatch,
+          "max",
+          column,
+          alias,
+          whereClause,
+          column,
+          orderByDirection,
+          limitValue
         );
-        if (!columnDef) {
-          setResult(`Error: Invalid column in MAX: ${maxColumn}`);
-          setTooltip(null);
-          return false;
-        }
-        if (columnDef.type !== "integer" && columnDef.type !== "date") {
-          setResult(
-            `Error: MAX can only be applied to numeric or date columns: ${maxColumn}`
-          );
-          setTooltip(null);
-          return false;
-        }
-
-        if (whereClause) {
-          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-          const conditions: Array<{
-            column: string;
-            operator: string;
-            value1?: string;
-            value2?: string;
-            join?: "AND" | "OR";
-          }> = [];
-          const joinOperators: string[] = [];
-
-          for (let i = 0; i < conditionParts.length; i++) {
-            if (i % 2 === 0) {
-              const part = conditionParts[i].trim();
-              const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-              );
-              if (betweenMatch) {
-                const [, column, value1, value2] = betweenMatch;
-                conditions.push({
-                  column,
-                  operator: "BETWEEN",
-                  value1,
-                  value2,
-                });
-              } else {
-                const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-                );
-                if (!conditionMatch) {
-                  setResult(
-                    `Error: Invalid condition in WHERE clause: ${part}`
-                  );
-                  setTooltip(null);
-                  return false;
-                }
-                const [, column, operator, value1] = conditionMatch;
-                conditions.push({ column, operator, value1 });
-              }
-            } else {
-              joinOperators.push(conditionParts[i].toUpperCase());
-            }
-          }
-
-          for (let i = 0; i < conditions.length - 1; i++) {
-            conditions[i].join = joinOperators[i] as "AND" | "OR";
-          }
-
-          for (const condition of conditions) {
-            const { column } = condition;
-            if (
-              !powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === column.toLowerCase()
-              )
-            ) {
-              setResult(`Error: Invalid column in WHERE clause: ${column}`);
-              setTooltip(null);
-              return false;
-            }
-          }
-
-          filteredData = filteredData.filter((row) => {
-            let result = true;
-            let currentGroup: Array<{
-              column: string;
-              operator: string;
-              value1?: string;
-              value2?: string;
-            }> = [];
-            let lastJoin: "AND" | "OR" | null = null;
-
-            for (const condition of conditions) {
-              const { column, operator, value1, value2, join } = condition;
-              currentGroup.push({ column, operator, value1, value2 });
-
-              if (
-                join ||
-                conditions.indexOf(condition) === conditions.length - 1
-              ) {
-                const groupResult = currentGroup.every((cond) => {
-                  if (
-                    ["IS NULL", "IS NOT NULL"].includes(
-                      cond.operator.toUpperCase()
-                    )
-                  ) {
-                    return evaluateNullCondition(
-                      row,
-                      cond.column,
-                      cond.operator
-                    );
-                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                    if (!cond.value1 || !cond.value2) return false;
-                    return evaluateBetweenCondition(
-                      row,
-                      cond.column,
-                      cond.value1,
-                      cond.value2
-                    );
-                  } else {
-                    if (!cond.value1) return false;
-                    return evaluateCondition(
-                      row,
-                      cond.column,
-                      cond.operator,
-                      cond.value1
-                    );
-                  }
-                });
-
-                if (lastJoin === "OR") {
-                  result = result || groupResult;
-                } else {
-                  result = result && groupResult;
-                }
-
-                currentGroup = [];
-                lastJoin = join || null;
-              }
-            }
-            return result;
-          });
-        }
-
-        let max: number | string | null = null;
-        if (columnDef.type === "integer") {
-          max = filteredData.reduce((acc, row) => {
-            const value = Number(row[maxColumn as keyof PowerRanger]);
-            return isNaN(value)
-              ? acc
-              : Math.max(acc || Number.NEGATIVE_INFINITY, value);
-          }, null as number | null);
-        } else if (columnDef.type === "date") {
-          max = filteredData.reduce((acc, row) => {
-            const value = String(row[maxColumn as keyof PowerRanger]);
-            return acc === null || value > acc ? value : acc;
-          }, null as string | null);
-        }
-
-        if (max === null) {
-          setResult(`Error: No valid values found for MAX(${maxColumn})`);
-          setTooltip(null);
-          return false;
-        }
-
-        const resultData = [{ [alias]: max }];
-
-        if (limitValue !== undefined) {
-          const limit = parseInt(limitValue, 10);
-          if (isNaN(limit) || limit <= 0) {
-            setResult("Error: LIMIT must be a positive integer");
-            setTooltip(null);
-            return false;
-          }
-          resultData.splice(limit);
-        }
-
-        try {
-          setResult(JSON.stringify(resultData, null, 2));
-        } catch {
-          setResult("Error: Failed to generate valid JSON output");
-          setTooltip(null);
-          return false;
-        }
-        setTooltip(null);
-        return true;
       }
 
       if (minMatch) {
-        const [, minColumn, alias = "min", whereClause, limitValue] = minMatch;
-        let filteredData = powerRangersData.data;
-
-        const columnDef = powerRangersData.columns.find(
-          (col) => col.name.toLowerCase() === minColumn.toLowerCase()
+        const [
+          ,
+          column,
+          alias = "min",
+          whereClause,
+          ,
+          orderByDirection,
+          limitValue,
+        ] = minMatch;
+        return handleAggregate(
+          minMatch,
+          "min",
+          column,
+          alias,
+          whereClause,
+          column,
+          orderByDirection,
+          limitValue
         );
-        if (!columnDef) {
-          setResult(`Error: Invalid column in MIN: ${minColumn}`);
-          setTooltip(null);
-          return false;
-        }
-        if (columnDef.type !== "integer" && columnDef.type !== "date") {
-          setResult(
-            `Error: MIN can only be applied to numeric or date columns: ${minColumn}`
-          );
-          setTooltip(null);
-          return false;
-        }
-
-        if (whereClause) {
-          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-          const conditions: Array<{
-            column: string;
-            operator: string;
-            value1?: string;
-            value2?: string;
-            join?: "AND" | "OR";
-          }> = [];
-          const joinOperators: string[] = [];
-
-          for (let i = 0; i < conditionParts.length; i++) {
-            if (i % 2 === 0) {
-              const part = conditionParts[i].trim();
-              const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-              );
-              if (betweenMatch) {
-                const [, column, value1, value2] = betweenMatch;
-                conditions.push({
-                  column,
-                  operator: "BETWEEN",
-                  value1,
-                  value2,
-                });
-              } else {
-                const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-                );
-                if (!conditionMatch) {
-                  setResult(
-                    `Error: Invalid condition in WHERE clause: ${part}`
-                  );
-                  setTooltip(null);
-                  return false;
-                }
-                const [, column, operator, value1] = conditionMatch;
-                conditions.push({ column, operator, value1 });
-              }
-            } else {
-              joinOperators.push(conditionParts[i].toUpperCase());
-            }
-          }
-
-          for (let i = 0; i < conditions.length - 1; i++) {
-            conditions[i].join = joinOperators[i] as "AND" | "OR";
-          }
-
-          for (const condition of conditions) {
-            const { column } = condition;
-            if (
-              !powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === column.toLowerCase()
-              )
-            ) {
-              setResult(`Error: Invalid column in WHERE clause: ${column}`);
-              setTooltip(null);
-              return false;
-            }
-          }
-
-          filteredData = filteredData.filter((row) => {
-            let result = true;
-            let currentGroup: Array<{
-              column: string;
-              operator: string;
-              value1?: string;
-              value2?: string;
-            }> = [];
-            let lastJoin: "AND" | "OR" | null = null;
-
-            for (const condition of conditions) {
-              const { column, operator, value1, value2, join } = condition;
-              currentGroup.push({ column, operator, value1, value2 });
-
-              if (
-                join ||
-                conditions.indexOf(condition) === conditions.length - 1
-              ) {
-                const groupResult = currentGroup.every((cond) => {
-                  if (
-                    ["IS NULL", "IS NOT NULL"].includes(
-                      cond.operator.toUpperCase()
-                    )
-                  ) {
-                    return evaluateNullCondition(
-                      row,
-                      cond.column,
-                      cond.operator
-                    );
-                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                    if (!cond.value1 || !cond.value2) return false;
-                    return evaluateBetweenCondition(
-                      row,
-                      cond.column,
-                      cond.value1,
-                      cond.value2
-                    );
-                  } else {
-                    if (!cond.value1) return false;
-                    return evaluateCondition(
-                      row,
-                      cond.column,
-                      cond.operator,
-                      cond.value1
-                    );
-                  }
-                });
-
-                if (lastJoin === "OR") {
-                  result = result || groupResult;
-                } else {
-                  result = result && groupResult;
-                }
-
-                currentGroup = [];
-                lastJoin = join || null;
-              }
-            }
-            return result;
-          });
-        }
-
-        let min: number | string | null = null;
-        if (columnDef.type === "integer") {
-          min = filteredData.reduce((acc, row) => {
-            const value = Number(row[minColumn as keyof PowerRanger]);
-            return isNaN(value)
-              ? acc
-              : Math.min(acc || Number.POSITIVE_INFINITY, value);
-          }, null as number | null);
-        } else if (columnDef.type === "date") {
-          min = filteredData.reduce((acc, row) => {
-            const value = String(row[minColumn as keyof PowerRanger]);
-            return acc === null || value < acc ? value : acc;
-          }, null as string | null);
-        }
-
-        if (min === null) {
-          setResult(`Error: No valid values found for MIN(${minColumn})`);
-          setTooltip(null);
-          return false;
-        }
-
-        const resultData = [{ [alias]: min }];
-
-        if (limitValue !== undefined) {
-          const limit = parseInt(limitValue, 10);
-          if (isNaN(limit) || limit <= 0) {
-            setResult("Error: LIMIT must be a positive integer");
-            setTooltip(null);
-            return false;
-          }
-          resultData.splice(limit);
-        }
-
-        try {
-          setResult(JSON.stringify(resultData, null, 2));
-        } catch {
-          setResult("Error: Failed to generate valid JSON output");
-          setTooltip(null);
-          return false;
-        }
-        setTooltip(null);
-        return true;
       }
 
       if (avgMatch) {
-        const [, avgColumn, alias = "avg", whereClause, limitValue] = avgMatch;
-        let filteredData = powerRangersData.data;
-
-        const columnDef = powerRangersData.columns.find(
-          (col) => col.name.toLowerCase() === avgColumn.toLowerCase()
+        const [
+          ,
+          column,
+          alias = "avg",
+          whereClause,
+          ,
+          orderByDirection,
+          limitValue,
+        ] = avgMatch;
+        return handleAggregate(
+          avgMatch,
+          "avg",
+          column,
+          alias,
+          whereClause,
+          column,
+          orderByDirection,
+          limitValue
         );
-        if (!columnDef) {
-          setResult(`Error: Invalid column in AVG: ${avgColumn}`);
-          setTooltip(null);
-          return false;
-        }
-        if (columnDef.type !== "integer") {
-          setResult(
-            `Error: AVG can only be applied to numeric columns: ${avgColumn}`
-          );
-          setTooltip(null);
-          return false;
-        }
-
-        if (whereClause) {
-          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-          const conditions: Array<{
-            column: string;
-            operator: string;
-            value1?: string;
-            value2?: string;
-            join?: "AND" | "OR";
-          }> = [];
-          const joinOperators: string[] = [];
-
-          for (let i = 0; i < conditionParts.length; i++) {
-            if (i % 2 === 0) {
-              const part = conditionParts[i].trim();
-              const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-              );
-              if (betweenMatch) {
-                const [, column, value1, value2] = betweenMatch;
-                conditions.push({
-                  column,
-                  operator: "BETWEEN",
-                  value1,
-                  value2,
-                });
-              } else {
-                const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-                );
-                if (!conditionMatch) {
-                  setResult(
-                    `Error: Invalid condition in WHERE clause: ${part}`
-                  );
-                  setTooltip(null);
-                  return false;
-                }
-                const [, column, operator, value1] = conditionMatch;
-                conditions.push({ column, operator, value1 });
-              }
-            } else {
-              joinOperators.push(conditionParts[i].toUpperCase());
-            }
-          }
-
-          for (let i = 0; i < conditions.length - 1; i++) {
-            conditions[i].join = joinOperators[i] as "AND" | "OR";
-          }
-
-          for (const condition of conditions) {
-            const { column } = condition;
-            if (
-              !powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === column.toLowerCase()
-              )
-            ) {
-              setResult(`Error: Invalid column in WHERE clause: ${column}`);
-              setTooltip(null);
-              return false;
-            }
-          }
-
-          filteredData = filteredData.filter((row) => {
-            let result = true;
-            let currentGroup: Array<{
-              column: string;
-              operator: string;
-              value1?: string;
-              value2?: string;
-            }> = [];
-            let lastJoin: "AND" | "OR" | null = null;
-
-            for (const condition of conditions) {
-              const { column, operator, value1, value2, join } = condition;
-              currentGroup.push({ column, operator, value1, value2 });
-
-              if (
-                join ||
-                conditions.indexOf(condition) === conditions.length - 1
-              ) {
-                const groupResult = currentGroup.every((cond) => {
-                  if (
-                    ["IS NULL", "IS NOT NULL"].includes(
-                      cond.operator.toUpperCase()
-                    )
-                  ) {
-                    return evaluateNullCondition(
-                      row,
-                      cond.column,
-                      cond.operator
-                    );
-                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                    if (!cond.value1 || !cond.value2) return false;
-                    return evaluateBetweenCondition(
-                      row,
-                      cond.column,
-                      cond.value1,
-                      cond.value2
-                    );
-                  } else {
-                    if (!cond.value1) return false;
-                    return evaluateCondition(
-                      row,
-                      cond.column,
-                      cond.operator,
-                      cond.value1
-                    );
-                  }
-                });
-
-                if (lastJoin === "OR") {
-                  result = result || groupResult;
-                } else {
-                  result = result && groupResult;
-                }
-
-                currentGroup = [];
-                lastJoin = join || null;
-              }
-            }
-            return result;
-          });
-        }
-
-        const values = filteredData
-          .map((row) => Number(row[avgColumn as keyof PowerRanger]))
-          .filter((value) => !isNaN(value));
-        const avg =
-          values.length > 0
-            ? values.reduce((acc, val) => acc + val, 0) / values.length
-            : null;
-
-        if (avg === null) {
-          setResult(`Error: No valid values found for AVG(${avgColumn})`);
-          setTooltip(null);
-          return false;
-        }
-
-        const resultData = [{ [alias]: avg }];
-
-        if (limitValue !== undefined) {
-          const limit = parseInt(limitValue, 10);
-          if (isNaN(limit) || limit <= 0) {
-            setResult("Error: LIMIT must be a positive integer");
-            setTooltip(null);
-            return false;
-          }
-          resultData.splice(limit);
-        }
-
-        try {
-          setResult(JSON.stringify(resultData, null, 2));
-        } catch {
-          setResult("Error: Failed to generate valid JSON output");
-          setTooltip(null);
-          return false;
-        }
-        setTooltip(null);
-        return true;
       }
 
       if (roundMatch) {
         const [
           ,
-          roundColumn,
-          decimalStr,
+          column,
+          ,
           alias = "round",
           whereClause,
+          ,
+          orderByDirection,
           limitValue,
         ] = roundMatch;
-        let filteredData = powerRangersData.data;
-        const columnDef = powerRangersData.columns.find(
-          (col) => col.name.toLowerCase() === roundColumn.toLowerCase()
+        return handleAggregate(
+          roundMatch,
+          "round",
+          column,
+          alias,
+          whereClause,
+          column,
+          orderByDirection,
+          limitValue
         );
-        if (!columnDef) {
-          setResult(`Error: Invalid column in ROUND: ${roundColumn}`);
-          setTooltip(null);
-          return false;
-        }
-        if (columnDef.type !== "integer") {
-          setResult(
-            `Error: ROUND can only be applied to numeric columns: ${roundColumn}`
-          );
-          setTooltip(null);
-          return false;
-        }
-        const decimalPlaces = parseInt(decimalStr, 10);
-        if (isNaN(decimalPlaces) || decimalPlaces < 0) {
-          setResult(
-            "Error: ROUND requires a non-negative integer for decimal places"
-          );
-          setTooltip(null);
-          return false;
-        }
-
-        if (whereClause) {
-          const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
-          const conditions: Array<{
-            column: string;
-            operator: string;
-            value1?: string;
-            value2?: string;
-            join?: "AND" | "OR";
-          }> = [];
-          const joinOperators: string[] = [];
-
-          for (let i = 0; i < conditionParts.length; i++) {
-            if (i % 2 === 0) {
-              const part = conditionParts[i].trim();
-              const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
-              );
-              if (betweenMatch) {
-                const [, column, value1, value2] = betweenMatch;
-                conditions.push({
-                  column,
-                  operator: "BETWEEN",
-                  value1,
-                  value2,
-                });
-              } else {
-                const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
-                );
-                if (!conditionMatch) {
-                  setResult(
-                    `Error: Invalid condition in WHERE clause: ${part}`
-                  );
-                  setTooltip(null);
-                  return false;
-                }
-                const [, column, operator, value1] = conditionMatch;
-                conditions.push({ column, operator, value1 });
-              }
-            } else {
-              joinOperators.push(conditionParts[i].toUpperCase());
-            }
-          }
-
-          for (let i = 0; i < conditions.length - 1; i++) {
-            conditions[i].join = joinOperators[i] as "AND" | "OR";
-          }
-
-          for (const condition of conditions) {
-            const { column } = condition;
-            if (
-              !powerRangersData.columns.some(
-                (col) => col.name.toLowerCase() === column.toLowerCase()
-              )
-            ) {
-              setResult(`Error: Invalid column in WHERE clause: ${column}`);
-              setTooltip(null);
-              return false;
-            }
-          }
-
-          filteredData = filteredData.filter((row) => {
-            let result = true;
-            let currentGroup: Array<{
-              column: string;
-              operator: string;
-              value1?: string;
-              value2?: string;
-            }> = [];
-            let lastJoin: "AND" | "OR" | null = null;
-
-            for (const condition of conditions) {
-              const { column, operator, value1, value2, join } = condition;
-              currentGroup.push({ column, operator, value1, value2 });
-
-              if (
-                join ||
-                conditions.indexOf(condition) === conditions.length - 1
-              ) {
-                const groupResult = currentGroup.every((cond) => {
-                  if (
-                    ["IS NULL", "IS NOT NULL"].includes(
-                      cond.operator.toUpperCase()
-                    )
-                  ) {
-                    return evaluateNullCondition(
-                      row,
-                      cond.column,
-                      cond.operator
-                    );
-                  } else if (cond.operator.toUpperCase() === "BETWEEN") {
-                    if (!cond.value1 || !cond.value2) return false;
-                    return evaluateBetweenCondition(
-                      row,
-                      cond.column,
-                      cond.value1,
-                      cond.value2
-                    );
-                  } else {
-                    if (!cond.value1) return false;
-                    return evaluateCondition(
-                      row,
-                      cond.column,
-                      cond.operator,
-                      cond.value1
-                    );
-                  }
-                });
-
-                if (lastJoin === "OR") {
-                  result = result || groupResult;
-                } else {
-                  result = result && groupResult;
-                }
-
-                currentGroup = [];
-                lastJoin = join || null;
-              }
-            }
-            return result;
-          });
-        }
-
-        if (isNaN(decimalPlaces) || decimalPlaces < 0) {
-          setResult(
-            "Error: ROUND requires a non-negative integer for decimal places"
-          );
-          setTooltip(null);
-          return false;
-        }
-
-        const resultData = filteredData.map((row) => {
-          const value = Number(row[roundColumn as keyof PowerRanger]);
-          if (isNaN(value)) {
-            return { [alias]: null };
-          }
-          return { [alias]: Number(value.toFixed(decimalPlaces)) };
-        });
-
-        if (limitValue !== undefined) {
-          const limit = parseInt(limitValue, 10);
-          if (isNaN(limit) || limit <= 0) {
-            setResult("Error: LIMIT must be a positive integer");
-            setTooltip(null);
-            return false;
-          }
-          resultData.splice(limit);
-        }
-
-        try {
-          setResult(JSON.stringify(resultData, null, 2));
-        } catch {
-          setResult("Error: Failed to generate valid JSON output");
-          setTooltip(null);
-          return false;
-        }
-
-        setTooltip(null);
-        return true;
       }
 
       if (selectMatch || selectDistinctMatch) {
@@ -2128,7 +1822,7 @@ export default function SqlEditor() {
           }>;
           elseOutput?: string;
         }> = [];
-        const aliases: { [key in keyof PowerRanger]?: string } = {};
+        const aliases: { [key: string]: string } = {};
 
         for (const field of rawFieldsWithAliases) {
           const asMatch = field.match(/^(.+?)\s+as\s+'([^']+)'\s*$/i);
@@ -2150,22 +1844,27 @@ export default function SqlEditor() {
           }
 
           const caseMatch = fieldName.match(
-            /^case\s+((?:when\s+\w+\s*(?:=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:'[^']*'|[^' ]\w*)\s*(?:and\s*(?:'[^']*'|[^' ]\w*)\s*)?then\s*(?:'[^']*'|[^' ]\w*)\s*)+)(?:else\s*('[^']*'|[^' ]\w*)\s*)?end$/i
+            /^case\s+((?:when\s+\w+\s*(?:=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:'[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*(?:and\s*(?:'[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*)?then\s*(?:'[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*)+)(?:else\s*(?:'[^']*'|[^' ]\w*|\d+(?:\.\d+)?))?\s*end$/i
           );
 
           if (caseMatch) {
             isCase = true;
-            const conditionsStr = caseMatch[1];
-            elseOutput = caseMatch[2];
+            const caseClause = caseMatch[1];
+            const elseMatch = fieldName.match(
+              /else\s*(?:'([^']*)'|([^' ]\w*|\d+(?:\.\d+)?))/i
+            );
+            if (elseMatch) {
+              elseOutput = elseMatch[1] || elseMatch[2];
+            }
 
-            const whenMatches = conditionsStr.matchAll(
-              /when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*(?:and\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s*)?then\s*('[^']*'|[^' ]\w*)/gi
+            const whenMatches = caseClause.matchAll(
+              /when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))(?:\s+and\s*(?:('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)))?\s*then\s*(?:('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))/gi
             );
 
             for (const whenMatch of whenMatches) {
               const [, column, operator, value1, value2, output] = whenMatch;
               if (
-                !powerRangersData.columns.some(
+                !table.columns.some(
                   (col) => col.name.toLowerCase() === column.toLowerCase()
                 )
               ) {
@@ -2176,24 +1875,33 @@ export default function SqlEditor() {
               caseConditions.push({
                 column,
                 operator: operator.toUpperCase(),
-                value1,
-                value2:
-                  operator.toUpperCase() === "BETWEEN" ? value2 : undefined,
-                output,
+                value1: value1.replace(/^'|'$/g, ""),
+                value2: value2 ? value2.replace(/^'|'$/g, "") : undefined,
+                output: output.replace(/^'|'$/g, ""),
               });
             }
 
             fields.push({
               name: fieldName,
-              alias: alias || "case_output",
+              alias: alias || "case_result",
               isCase,
               caseConditions,
               elseOutput,
             });
           } else {
-            fields.push({ name: fieldName, alias });
-            if (asMatch) {
-              aliases[fieldName as keyof PowerRanger] = alias;
+            if (
+              fieldName !== "*" &&
+              !table.columns.some(
+                (col) => col.name.toLowerCase() === fieldName.toLowerCase()
+              )
+            ) {
+              setResult(`Error: Invalid field: ${fieldName}`);
+              setTooltip(null);
+              return false;
+            }
+            fields.push({ name: fieldName, alias: alias || fieldName });
+            if (fieldName !== "*") {
+              aliases[fieldName.toLowerCase()] = alias || fieldName;
             }
           }
         }
@@ -2216,12 +1924,14 @@ export default function SqlEditor() {
         const actualFields = fields
           .filter((f) => !f.isCase)
           .map((f) => f.name)
-          .includes("*")
-          ? powerRangersData.columns.map((col) => col.name)
-          : fields.filter((f) => !f.isCase).map((f) => f.name);
-
+          .flatMap((f) =>
+            f === "*" ? table.columns.map((col) => col.name) : [f]
+          );
         const invalidFields = actualFields.filter(
-          (field) => !powerRangersData.columns.some((col) => col.name === field)
+          (field) =>
+            !table.columns.some(
+              (col) => col.name.toLowerCase() === field.toLowerCase()
+            )
         );
         if (invalidFields.length > 0) {
           setResult(`Error: Invalid field(s): ${invalidFields.join(", ")}`);
@@ -2229,8 +1939,7 @@ export default function SqlEditor() {
           return false;
         }
 
-        let filteredData: PowerRanger[] = powerRangersData.data;
-
+        let filteredData = table.data;
         if (whereClause) {
           const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
           const conditions: Array<{
@@ -2246,7 +1955,7 @@ export default function SqlEditor() {
             if (i % 2 === 0) {
               const part = conditionParts[i].trim();
               const betweenMatch = part.match(
-                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*)\s+AND\s+('[^']*'|[^' ]\w*)$/i
+                /^(\w+)\s+BETWEEN\s+('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)\s+AND\s+('[^']*'|[^' ]\w*|\d+(?:\.\d+)?)$/i
               );
               if (betweenMatch) {
                 const [, column, value1, value2] = betweenMatch;
@@ -2258,7 +1967,7 @@ export default function SqlEditor() {
                 });
               } else {
                 const conditionMatch = part.match(
-                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*))?$/i
+                  /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|IS NULL|IS NOT NULL)\s*(?:('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))?$/i
                 );
                 if (!conditionMatch) {
                   setResult(
@@ -2282,7 +1991,7 @@ export default function SqlEditor() {
           for (const condition of conditions) {
             const { column } = condition;
             if (
-              !powerRangersData.columns.some(
+              !table.columns.some(
                 (col) => col.name.toLowerCase() === column.toLowerCase()
               )
             ) {
@@ -2319,7 +2028,8 @@ export default function SqlEditor() {
                     return evaluateNullCondition(
                       row,
                       cond.column,
-                      cond.operator
+                      cond.operator,
+                      table
                     );
                   } else if (cond.operator.toUpperCase() === "BETWEEN") {
                     if (!cond.value1 || !cond.value2) return false;
@@ -2327,7 +2037,8 @@ export default function SqlEditor() {
                       row,
                       cond.column,
                       cond.value1,
-                      cond.value2
+                      cond.value2,
+                      table
                     );
                   } else {
                     if (!cond.value1) return false;
@@ -2335,7 +2046,8 @@ export default function SqlEditor() {
                       row,
                       cond.column,
                       cond.operator,
-                      cond.value1
+                      cond.value1,
+                      table
                     );
                   }
                 });
@@ -2354,72 +2066,86 @@ export default function SqlEditor() {
           });
         }
 
-        let resultData: Partial<PowerRanger>[] = filteredData.map((row) => {
-          const resultRow: Record<string, string | number | null> = {};
+        let resultData: Array<
+          Partial<PowerRanger> & {
+            [key: string]: string | number | string[] | null;
+          }
+        > = filteredData.map((row) => {
+          const resultRow: Partial<PowerRanger> & {
+            [key: string]: string | number | string[] | null;
+          } = {};
+
           fields.forEach((field) => {
-            const alias = field.alias || field.name;
             if (field.isCase) {
-              let value: string | null = field.elseOutput || null;
-              for (const condition of field.caseConditions!) {
+              let caseResult: string | null = field.elseOutput || null;
+              for (const condition of field.caseConditions || []) {
+                let conditionMet = false;
                 if (condition.operator === "BETWEEN") {
-                  if (
-                    evaluateBetweenCondition(
+                  if (condition.value1 && condition.value2) {
+                    conditionMet = evaluateBetweenCondition(
                       row,
                       condition.column,
-                      condition.value1!,
-                      condition.value2!
-                    )
-                  ) {
-                    value = condition.output;
-                    break;
+                      condition.value1,
+                      condition.value2,
+                      table
+                    );
                   }
                 } else if (
-                  ["IS NULL", "IS NOT NULL"].includes(condition.operator) &&
-                  evaluateNullCondition(
-                    row,
-                    condition.column,
-                    condition.operator
-                  )
+                  ["IS NULL", "IS NOT NULL"].includes(condition.operator)
                 ) {
-                  value = condition.output;
-                  break;
-                } else if (
-                  evaluateCondition(
+                  conditionMet = evaluateNullCondition(
                     row,
                     condition.column,
                     condition.operator,
-                    condition.value1!
-                  )
-                ) {
-                  value = condition.output;
+                    table
+                  );
+                } else {
+                  if (condition.value1) {
+                    conditionMet = evaluateCondition(
+                      row,
+                      condition.column,
+                      condition.operator,
+                      condition.value1,
+                      table
+                    );
+                  }
+                }
+                if (conditionMet) {
+                  caseResult = condition.output;
                   break;
                 }
               }
-              resultRow[alias] = value;
+              resultRow[field.alias || "case_result"] = caseResult;
+            } else if (field.name === "*") {
+              table.columns.forEach((col) => {
+                resultRow[col.name] = row[col.name as keyof PowerRanger];
+              });
             } else {
-              resultRow[alias] = row[field.name as keyof PowerRanger];
+              resultRow[field.alias || field.name] =
+                row[field.name as keyof PowerRanger];
             }
           });
+
           return resultRow;
         });
 
         if (isDistinct) {
-          const distinctRows = new Set<string>();
-          resultData = resultData.filter(
-            (row: Record<string, string | number | undefined>) => {
-              const key = fields
-                .map((field) => {
-                  const alias = field.alias || field.name;
-                  return `${alias}:${row[alias]}`;
-                })
-                .join("|");
-              if (distinctRows.has(key)) {
-                return false;
-              }
-              distinctRows.add(key);
-              return true;
+          const seen = new Set<string>();
+          resultData = resultData.filter((row) => {
+            const key = JSON.stringify(
+              Object.keys(row)
+                .sort()
+                .reduce((obj, key) => {
+                  obj[key] = row[key];
+                  return obj;
+                }, {} as Record<string, string | number | string[] | null>)
+            );
+            if (seen.has(key)) {
+              return false;
             }
-          );
+            seen.add(key);
+            return true;
+          });
 
           if (fields.length > 1) {
             const groupByFields = fields.map(
@@ -2428,40 +2154,40 @@ export default function SqlEditor() {
             setTooltip(
               `SELECT DISTINCT ${groupByFields.join(
                 ", "
-              )} FROM power_rangers is roughly equivalent to: SELECT ${groupByFields.join(
+              )} FROM ${tableName} is roughly equivalent to: SELECT ${groupByFields.join(
                 ", "
-              )} FROM power_rangers GROUP BY ${groupByFields.join(", ")}`
+              )} FROM ${tableName} GROUP BY ${groupByFields.join(", ")}`
             );
             setTimeout(() => setTooltip(null), 5000);
           } else {
             setTooltip(null);
           }
         }
-
         if (orderByColumn) {
-          if (
-            !powerRangersData.columns.some(
-              (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
-            )
-          ) {
+          const columnType = table.columns.find(
+            (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
+          )?.type;
+          const alias = aliases[orderByColumn.toLowerCase()];
+          if (!columnType && !alias) {
             setResult(`Error: Invalid column in ORDER BY: ${orderByColumn}`);
             setTooltip(null);
             return false;
           }
 
-          const columnType = powerRangersData.columns.find(
-            (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
-          )?.type;
-
           resultData.sort((a, b) => {
-            const aValue = a[orderByColumn as keyof PowerRanger] ?? "";
-            const bValue = b[orderByColumn as keyof PowerRanger] ?? "";
+            const actualColumn = alias || orderByColumn;
+            const aValue = a[actualColumn] ?? "";
+            const bValue = b[actualColumn] ?? "";
             let comparison = 0;
 
-            if (columnType === "integer") {
+            if (columnType === "integer" || columnType === "float") {
               const aNum = Number(aValue);
               const bNum = Number(bValue);
               comparison = aNum - bNum;
+            } else if (columnType === "text[]") {
+              const aArray = Array.isArray(aValue) ? aValue : [];
+              const bArray = Array.isArray(bValue) ? bValue : [];
+              comparison = aArray.join(",").localeCompare(bArray.join(","));
             } else {
               comparison = String(aValue).localeCompare(String(bValue));
             }
@@ -2481,6 +2207,7 @@ export default function SqlEditor() {
           setTooltip(null);
           return false;
         }
+        setTooltip(null);
         return true;
       }
 
@@ -2494,29 +2221,56 @@ export default function SqlEditor() {
   useEffect(() => {
     const getUniqueValues = (
       column: string,
-      columnType: string | undefined
+      columnType: string | undefined,
+      table: PowerRangersData
     ): string[] => {
       if (!columnType) return [];
 
-      if (columnType === "integer") {
+      if (columnType === "integer" || columnType === "float") {
         return Array.from(
           new Set(
-            powerRangersData.data.map((row) =>
-              String(row[column as keyof PowerRanger])
-            )
+            table.data
+              .map((row: PowerRanger) =>
+                Number(row[column as keyof PowerRanger])
+              )
+              .filter((val) => !isNaN(val))
+              .map((val) => val.toString())
           )
         ).sort((a, b) => Number(a) - Number(b));
       }
 
       if (columnType === "date" || columnType === "text") {
-        if (column.toLowerCase() === "season") {
-          return uniqueSeasons.map((season) => `'${season}'`).sort();
+        if (column.toLowerCase() === "season_id") {
+          return uniqueSeasons(table.tableName)
+            .map((season: number) => `'${season}'`)
+            .sort();
         }
         return Array.from(
           new Set(
-            powerRangersData.data.map(
-              (row) => `'${String(row[column as keyof PowerRanger])}'`
-            )
+            table.data
+              .map(
+                (row: PowerRanger) =>
+                  `'${String(row[column as keyof PowerRanger]).replace(
+                    /'/g,
+                    "''"
+                  )}'`
+              )
+              .filter((val) => val !== "''")
+          )
+        ).sort();
+      }
+
+      if (columnType === "text[]") {
+        return Array.from(
+          new Set(
+            table.data
+              .flatMap(
+                (row: PowerRanger) =>
+                  (
+                    row[column as keyof PowerRanger] as string[] | undefined
+                  )?.map((val) => `'${String(val).replace(/'/g, "''")}'`) || []
+              )
+              .filter((val) => val !== "''")
           )
         ).sort();
       }
@@ -2526,24 +2280,35 @@ export default function SqlEditor() {
 
     const getLikePatternSuggestions = (
       column: string,
-      columnType: string | undefined
+      columnType: string | undefined,
+      table: PowerRangersData
     ): string[] => {
-      if (columnType !== "text") return [];
+      if (columnType !== "text" && columnType !== "text[]") return [];
 
       const values = Array.from(
         new Set(
-          powerRangersData.data.map((row) =>
-            String(row[column as keyof PowerRanger])
-          )
+          columnType === "text[]"
+            ? table.data
+                .flatMap(
+                  (row: PowerRanger) =>
+                    (
+                      row[column as keyof PowerRanger] as string[] | undefined
+                    )?.map((val) => String(val)) || []
+                )
+                .filter((val) => val)
+            : table.data
+                .map((row: PowerRanger) =>
+                  String(row[column as keyof PowerRanger])
+                )
+                .filter((val) => val)
         )
       );
 
       const patterns: string[] = [];
-
-      values.forEach((value) => {
+      values.forEach((value: string) => {
         const len = value.length;
         // 1. Exact match
-        patterns.push(`'${value}'`);
+        patterns.push(`'${value.replace(/'/g, "''")}'`);
         // 2. Prefix patterns (e.g., 'B%')
         for (let i = 1; i <= Math.min(len, 4); i++) {
           const prefixPattern = `'${value.slice(0, i)}%'`;
@@ -2612,8 +2377,11 @@ export default function SqlEditor() {
       return Array.from(new Set(patterns)).sort();
     };
 
-    const getColumnOptions = (excludeFields: string[]) =>
-      powerRangersData.columns
+    const getColumnOptions = (
+      excludeFields: string[],
+      table: PowerRangersData
+    ): CompletionOption[] =>
+      table.columns
         .filter((col) => !excludeFields.includes(col.name.toLowerCase()))
         .map((col) => ({
           label: col.name,
@@ -2622,7 +2390,10 @@ export default function SqlEditor() {
           apply: col.name,
         }));
 
-    const getUsedColumnsInWhere = (whereClause: string): string[] => {
+    const getUsedColumnsInWhere = (
+      whereClause: string,
+      table: PowerRangersData
+    ): string[] => {
       const usedColumns: string[] = [];
       const conditionParts = whereClause
         .split(/\s+(AND|OR)\s+/i)
@@ -2634,11 +2405,7 @@ export default function SqlEditor() {
         );
         if (conditionMatch) {
           const column = conditionMatch[1].toLowerCase();
-          if (
-            powerRangersData.columns.some(
-              (col) => col.name.toLowerCase() === column
-            )
-          ) {
+          if (table.columns.some((col) => col.name.toLowerCase() === column)) {
             usedColumns.push(column);
           }
         }
@@ -2651,6 +2418,16 @@ export default function SqlEditor() {
       const docText = ctx.state.doc.toString().toLowerCase();
       const fullDocText = ctx.state.doc.toString();
       const cursorPos = ctx.pos;
+
+      const tableMatch = fullDocText.match(/from\s+(\w+)/i);
+      const tableName = tableMatch ? tableMatch[1].toLowerCase() : null;
+      const table = tableName
+        ? tables[tableName]
+        : tables["mighty_morphin_power_rangers"];
+
+      if (!table) {
+        return null;
+      }
 
       const selectMatch = fullDocText
         .substring(0, cursorPos)
@@ -2666,7 +2443,10 @@ export default function SqlEditor() {
                 f
                   .trim()
                   .replace(/\s+as\s+'.*?'$/i, "")
-                  .replace(/^round\s*\(\s*avg\s*\((\w+)\)\s*\)$/i, "$1")
+                  .replace(
+                    /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i,
+                    "$1"
+                  )
                   .replace(/^case\s+.*?\s+end$/i, "")
                   .toLowerCase()
               )
@@ -2709,24 +2489,22 @@ export default function SqlEditor() {
         };
       }
 
-      // 2. After DESCRIBE, suggest the table
+      // 2. After DESCRIBE, suggest table names
       if (/^describe\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "power_rangers",
-              type: "table",
-              apply: "power_rangers",
-              detail: "Table name",
-            },
-          ],
+          options: Object.keys(tables).map((tableName) => ({
+            label: tableName,
+            type: "table",
+            apply: tableName,
+            detail: "Table name",
+          })),
         };
       }
 
       // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), AVG(column), ROUND(column, decimals), DISTINCT
       if (/^select\s*$/i.test(docText)) {
-        const options = getColumnOptions(alreadySelectedFields);
+        const options = getColumnOptions(alreadySelectedFields, table);
         options.unshift(
           { label: "*", type: "field", detail: "all columns", apply: "*" },
           {
@@ -2747,54 +2525,64 @@ export default function SqlEditor() {
             apply: "COUNT(*)",
             detail: "Count all rows",
           },
-          ...powerRangersData.columns.map((col) => ({
+          ...table.columns.map((col) => ({
             label: `COUNT(${col.name})`,
             type: "function",
             apply: `COUNT(${col.name})`,
             detail: `Count non-null values in ${col.name}`,
           })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `SUM(${col.name})`,
               type: "function",
               apply: `SUM(${col.name})`,
               detail: `Sum values in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer" || col.type === "date")
+          ...table.columns
+            .filter(
+              (col) =>
+                col.type === "integer" ||
+                col.type === "float" ||
+                col.type === "date"
+            )
             .map((col) => ({
               label: `MAX(${col.name})`,
               type: "function",
               apply: `MAX(${col.name})`,
               detail: `Maximum value in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer" || col.type === "date")
+          ...table.columns
+            .filter(
+              (col) =>
+                col.type === "integer" ||
+                col.type === "float" ||
+                col.type === "date"
+            )
             .map((col) => ({
               label: `MIN(${col.name})`,
               type: "function",
               apply: `MIN(${col.name})`,
               detail: `Minimum value in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `AVG(${col.name})`,
               type: "function",
               apply: `AVG(${col.name})`,
               detail: `Average value in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `ROUND(${col.name}, `,
               type: "function",
               apply: `ROUND(${col.name}, `,
               detail: `Round values in ${col.name} to specified decimals`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `ROUND(AVG(${col.name}), `,
               type: "function",
@@ -2809,7 +2597,7 @@ export default function SqlEditor() {
       if (/^select\s+distinct\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
-          options: getColumnOptions(alreadySelectedFields),
+          options: getColumnOptions(alreadySelectedFields, table),
         };
       }
 
@@ -2819,7 +2607,7 @@ export default function SqlEditor() {
         /,\s*$/.test(docText.substring(0, cursorPos)) &&
         !docText.includes("from")
       ) {
-        const options = getColumnOptions(alreadySelectedFields);
+        const options = getColumnOptions(alreadySelectedFields, table);
         options.push(
           {
             label: "CASE",
@@ -2829,58 +2617,68 @@ export default function SqlEditor() {
           },
           {
             label: "COUNT(*)",
-            type: "function",
+            type: "function''",
             apply: "COUNT(*)",
             detail: "Count all rows",
           },
-          ...powerRangersData.columns.map((col) => ({
+          ...table.columns.map((col) => ({
             label: `COUNT(${col.name})`,
             type: "function",
             apply: `COUNT(${col.name})`,
             detail: `Count non-null values in ${col.name}`,
           })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `SUM(${col.name})`,
               type: "function",
               apply: `SUM(${col.name})`,
               detail: `Sum values in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer" || col.type === "date")
+          ...table.columns
+            .filter(
+              (col) =>
+                col.type === "integer" ||
+                col.type === "float" ||
+                col.type === "date"
+            )
             .map((col) => ({
               label: `MAX(${col.name})`,
               type: "function",
               apply: `MAX(${col.name})`,
               detail: `Maximum value in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer" || col.type === "date")
+          ...table.columns
+            .filter(
+              (col) =>
+                col.type === "integer" ||
+                col.type === "float" ||
+                col.type === "date"
+            )
             .map((col) => ({
               label: `MIN(${col.name})`,
               type: "function",
               apply: `MIN(${col.name})`,
               detail: `Minimum value in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `AVG(${col.name})`,
               type: "function",
               apply: `AVG(${col.name})`,
               detail: `Average value in ${col.name}`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `ROUND(${col.name}, `,
               type: "function",
               apply: `ROUND(${col.name}, `,
               detail: `Round values in ${col.name} to specified decimals`,
             })),
-          ...powerRangersData.columns
-            .filter((col) => col.type === "integer")
+          ...table.columns
+            .filter((col) => col.type === "integer" || col.type === "float")
             .map((col) => ({
               label: `ROUND(AVG(${col.name}), `,
               type: "function",
@@ -2921,7 +2719,7 @@ export default function SqlEditor() {
             );
           const isColumn =
             lastFieldClean.toLowerCase() === "*" ||
-            powerRangersData.columns.some(
+            table.columns.some(
               (col) => col.name.toLowerCase() === lastFieldClean.toLowerCase()
             );
           const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
@@ -2949,7 +2747,7 @@ export default function SqlEditor() {
               ? undefined
               : formatColumnName(lastFieldClean);
 
-            const options = [
+            const options: CompletionOption[] = [
               {
                 label: ",",
                 type: "operator",
@@ -3011,23 +2809,21 @@ export default function SqlEditor() {
         };
       }
 
-      // 8. After FROM, suggest power_rangers
+      // 8. After FROM, suggest table names
       if (/from\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "power_rangers",
-              type: "table",
-              apply: "power_rangers ",
-              detail: "Table name",
-            },
-          ],
+          options: Object.keys(tables).map((tableName) => ({
+            label: tableName,
+            type: "table",
+            apply: tableName + " ",
+            detail: "Table name",
+          })),
         };
       }
 
-      // 9. After FROM power_rangers, suggest WHERE, GROUP BY, ORDER BY, or LIMIT
-      if (/from\s+power_rangers\s*$/i.test(docText)) {
+      // 9. After FROM table_name, suggest WHERE, GROUP BY, ORDER BY, or LIMIT
+      if (new RegExp(`from\\s+${table.tableName}\\s*$`, "i").test(docText)) {
         return {
           from: word?.from ?? cursorPos,
           options: [
@@ -3064,7 +2860,7 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
-            ...getColumnOptions(alreadySelectedFields),
+            ...getColumnOptions(alreadySelectedFields, table),
             ...selectFields.map(({ field, index }) => ({
               label: `${index}`,
               type: "value",
@@ -3087,7 +2883,7 @@ export default function SqlEditor() {
               .filter((f) => f)
           : [];
 
-        const availableColumns = powerRangersData.columns.filter(
+        const availableColumns = table.columns.filter(
           (col) => !usedFields.includes(col.name.toLowerCase())
         );
 
@@ -3098,6 +2894,12 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
+            {
+              label: ",",
+              type: "operator",
+              apply: ", ",
+              detail: "Add another column",
+            },
             {
               label: "HAVING",
               type: "keyword",
@@ -3133,18 +2935,23 @@ export default function SqlEditor() {
       }
 
       // 12. After WHERE, suggest columns
-      if (/from\s+power_rangers\s+where\s*$/i.test(docText)) {
+      if (
+        new RegExp(`from\\s+${table.tableName}\\s+where\\s*$`, "i").test(
+          docText
+        )
+      ) {
         return {
           from: word?.from ?? cursorPos,
-          options: getColumnOptions([]),
+          options: getColumnOptions([], table),
         };
       }
 
       // 13. After a complete condition, suggest AND, OR, GROUP BY, ORDER BY, or LIMIT
       if (
-        /from\s+power_rangers\s+where\s+.*?(?:\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)|\w+\s*BETWEEN\s*('[^']*'|[^' ]\w*)\s*AND\s*('[^']*'|[^' ]\w*)|\w+\s*(IS NULL|IS NOT NULL))\s*$/i.test(
-          docText
-        )
+        new RegExp(
+          `from\\s+${table.tableName}\\s+where\\s+.*?(?:\\w+\\s*(=|\\!=|>|<|>=|<=|LIKE)\\s*('[^']*'|[^' ]\\w*)|\\w+\\s*BETWEEN\\s*('[^']*'|[^' ]\\w*)\\s*AND\\s*('[^']*'|[^' ]\\w*)|\\w+\\s*(IS NULL|IS NOT NULL))\\s*$`,
+          "i"
+        ).test(docText)
       ) {
         return {
           from: word?.from ?? cursorPos,
@@ -3185,8 +2992,11 @@ export default function SqlEditor() {
 
       // 14. After WHERE column, suggest operators
       if (
-        /from\s+power_rangers\s+where\s+.*?\b(\w+)\s*$/i.test(docText) &&
-        powerRangersData.columns.some((col) =>
+        new RegExp(
+          `from\\s+${table.tableName}\\s+where\\s+.*?\\b(\\w+)\\s*$`,
+          "i"
+        ).test(docText) &&
+        table.columns.some((col) =>
           new RegExp(`\\b${col.name.toLowerCase()}\\s*$`, "i").test(docText)
         )
       ) {
@@ -3248,21 +3058,23 @@ export default function SqlEditor() {
       }
 
       // 15. After WHERE column operator, suggest values
-      const valuePattern =
-        /from\s+power_rangers\s+where\s+(?:.*?\s+(?:and|or)\s+)?(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
+      const valuePattern = new RegExp(
+        `from\\s+${table.tableName}\\s+where\\s+(?:.*?\\s+(?:and|or)\\s+)?(\\w+)\\s*(=|\\!=|>|<|>=|<=|LIKE|BETWEEN)\\s*(?:('[^']*'|[^' ]\\w*)?)?$`,
+        "i"
+      );
       if (valuePattern.test(docText)) {
         const match = docText.match(valuePattern);
         if (match) {
           const column = match[1];
           const operator = match[2];
           const value1 = match[3];
-          const columnType = powerRangersData.columns.find(
+          const columnType = table.columns.find(
             (col) => col.name.toLowerCase() === column?.toLowerCase()
           )?.type;
 
           if (operator.toUpperCase() === "BETWEEN") {
             if (!value1) {
-              const sampleValues = getUniqueValues(column, columnType);
+              const sampleValues = getUniqueValues(column, columnType, table);
               return {
                 from: word?.from ?? cursorPos,
                 options: sampleValues.map((value) => ({
@@ -3273,7 +3085,7 @@ export default function SqlEditor() {
                 })),
               };
             } else {
-              const sampleValues = getUniqueValues(column, columnType);
+              const sampleValues = getUniqueValues(column, columnType, table);
               return {
                 from: word?.from ?? cursorPos,
                 options: sampleValues.map((value) => ({
@@ -3287,7 +3099,11 @@ export default function SqlEditor() {
           }
 
           if (operator.toUpperCase() === "LIKE") {
-            const likePatterns = getLikePatternSuggestions(column, columnType);
+            const likePatterns = getLikePatternSuggestions(
+              column,
+              columnType,
+              table
+            );
             return {
               from: word?.from ?? cursorPos,
               options: likePatterns.map((pattern) => ({
@@ -3303,7 +3119,7 @@ export default function SqlEditor() {
             return null;
           }
 
-          const sampleValues = getUniqueValues(column, columnType);
+          const sampleValues = getUniqueValues(column, columnType, table);
           return {
             from: word?.from ?? cursorPos,
             options: sampleValues.map((value) => ({
@@ -3317,21 +3133,27 @@ export default function SqlEditor() {
       }
 
       // 16. After AND or OR, suggest remaining columns
-      if (/from\s+power_rangers\s+where\s+.*?\s+(and|or)\s*$/i.test(docText)) {
+      if (
+        new RegExp(
+          `from\\s+${table.tableName}\\s+where\\s+.*?\\s+(and|or)\\s*$`,
+          "i"
+        ).test(docText)
+      ) {
         const whereClause =
           docText.match(/where\s+(.+?)\s+(?:and|or)\s*$/i)?.[1] || "";
-        const usedColumns = getUsedColumnsInWhere(whereClause);
+        const usedColumns = getUsedColumnsInWhere(whereClause, table);
         return {
           from: word?.from ?? cursorPos,
-          options: getColumnOptions(usedColumns),
+          options: getColumnOptions(usedColumns, table),
         };
       }
 
       // 17. Suggest number after LIMIT
       if (
-        /from\s+power_rangers\s+(?:where\s+.*?\s+)?(?:group\s+by\s+.*?\s+)?limit\s*$/i.test(
-          docText
-        )
+        new RegExp(
+          `from\\s+${table.tableName}\\s+(?:where\\s+.*?\\s+)?(?:group\\s+by\\s+.*?\\s+)?limit\\s*$`,
+          "i"
+        ).test(docText)
       ) {
         return {
           from: word?.from ?? cursorPos,
@@ -3383,7 +3205,7 @@ export default function SqlEditor() {
       if (/order\s+by\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
-          options: getColumnOptions([]),
+          options: getColumnOptions([], table),
         };
       }
 
@@ -3392,7 +3214,7 @@ export default function SqlEditor() {
         const orderByColumn = docText.match(/order\s+by\s+(\w+)\s*$/i)?.[1];
         if (
           orderByColumn &&
-          powerRangersData.columns.some(
+          table.columns.some(
             (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
           )
         ) {
@@ -3434,7 +3256,7 @@ export default function SqlEditor() {
               .filter((f) => f)
           : [];
 
-        const availableColumns = powerRangersData.columns.filter(
+        const availableColumns = table.columns.filter(
           (col) => !usedFields.includes(col.name.toLowerCase())
         );
         const availableSelectFields = selectFields.filter(
@@ -3444,6 +3266,12 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
+            {
+              label: ",",
+              type: "operator",
+              apply: ", ",
+              detail: "Add another column",
+            },
             {
               label: "HAVING",
               type: "keyword",
@@ -3489,38 +3317,48 @@ export default function SqlEditor() {
               apply: "COUNT(*) ",
               detail: "Count all rows",
             },
-            ...powerRangersData.columns.map((col) => ({
+            ...table.columns.map((col) => ({
               label: `COUNT(${col.name})`,
               type: "function",
               apply: `COUNT(${col.name}) `,
               detail: `Count non-null values in ${col.name}`,
             })),
-            ...powerRangersData.columns
-              .filter((col) => col.type === "integer")
+            ...table.columns
+              .filter((col) => col.type === "integer" || col.type === "float")
               .map((col) => ({
                 label: `SUM(${col.name})`,
                 type: "function",
                 apply: `SUM(${col.name}) `,
                 detail: `Sum values in ${col.name}`,
               })),
-            ...powerRangersData.columns
-              .filter((col) => col.type === "integer" || col.type === "date")
+            ...table.columns
+              .filter(
+                (col) =>
+                  col.type === "integer" ||
+                  col.type === "float" ||
+                  col.type === "date"
+              )
               .map((col) => ({
                 label: `MAX(${col.name})`,
                 type: "function",
                 apply: `MAX(${col.name}) `,
                 detail: `Maximum value in ${col.name}`,
               })),
-            ...powerRangersData.columns
-              .filter((col) => col.type === "integer" || col.type === "date")
+            ...table.columns
+              .filter(
+                (col) =>
+                  col.type === "integer" ||
+                  col.type === "float" ||
+                  col.type === "date"
+              )
               .map((col) => ({
                 label: `MIN(${col.name})`,
                 type: "function",
                 apply: `MIN(${col.name}) `,
                 detail: `Minimum value in ${col.name}`,
               })),
-            ...powerRangersData.columns
-              .filter((col) => col.type === "integer")
+            ...table.columns
+              .filter((col) => col.type === "integer" || col.type === "float")
               .map((col) => ({
                 label: `AVG(${col.name})`,
                 type: "function",
@@ -3606,14 +3444,14 @@ export default function SqlEditor() {
       if (/^select\s+.*?\bcase\s+when\s*$/i.test(docText)) {
         return {
           from: word?.from ?? cursorPos,
-          options: getColumnOptions([]),
+          options: getColumnOptions([], table),
         };
       }
 
       // 27. After CASE WHEN column, suggest operators
       if (
         /^select\s+.*?\bcase\s+when\s+\w+\s*$/i.test(docText) &&
-        powerRangersData.columns.some((col) =>
+        table.columns.some((col) =>
           new RegExp(`when\\s+${col.name.toLowerCase()}\\s*$`, "i").test(
             docText
           )
@@ -3685,13 +3523,13 @@ export default function SqlEditor() {
           const column = match[1];
           const operator = match[2];
           const value1 = match[3];
-          const columnType = powerRangersData.columns.find(
+          const columnType = table.columns.find(
             (col) => col.name.toLowerCase() === column?.toLowerCase()
           )?.type;
 
           if (operator.toUpperCase() === "BETWEEN") {
             if (!value1) {
-              const sampleValues = getUniqueValues(column, columnType);
+              const sampleValues = getUniqueValues(column, columnType, table);
               return {
                 from: word?.from ?? cursorPos,
                 options: sampleValues.map((value) => ({
@@ -3702,7 +3540,7 @@ export default function SqlEditor() {
                 })),
               };
             } else {
-              const sampleValues = getUniqueValues(column, columnType);
+              const sampleValues = getUniqueValues(column, columnType, table);
               return {
                 from: word?.from ?? cursorPos,
                 options: sampleValues.map((value) => ({
@@ -3716,7 +3554,11 @@ export default function SqlEditor() {
           }
 
           if (operator.toUpperCase() === "LIKE") {
-            const likePatterns = getLikePatternSuggestions(column, columnType);
+            const likePatterns = getLikePatternSuggestions(
+              column,
+              columnType,
+              table
+            );
             return {
               from: word?.from ?? cursorPos,
               options: likePatterns.map((pattern) => ({
@@ -3742,7 +3584,7 @@ export default function SqlEditor() {
             };
           }
 
-          const sampleValues = getUniqueValues(column, columnType);
+          const sampleValues = getUniqueValues(column, columnType, table);
           return {
             from: word?.from ?? cursorPos,
             options: sampleValues.map((value) => ({
@@ -3782,7 +3624,7 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
-            ...getColumnOptions([]),
+            ...getColumnOptions([], table),
             ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
               label: val,
               type: "value",
@@ -3793,6 +3635,7 @@ export default function SqlEditor() {
         };
       }
 
+      // 31. After THEN value or ELSE value, suggest WHEN, ELSE, or END
       if (
         /^select\s+.*?\bcase\s+when\s+.*?\s+then\s*('[^']*'|[^' ]\w*)\s*$/i.test(
           docText
@@ -3831,7 +3674,7 @@ export default function SqlEditor() {
         return {
           from: word?.from ?? cursorPos,
           options: [
-            ...getColumnOptions([]),
+            ...getColumnOptions([], table),
             ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
               label: val,
               type: "value",
@@ -3904,7 +3747,7 @@ export default function SqlEditor() {
           indentWithTab,
           {
             key: "Mod-Enter",
-            run: (view) => {
+            run: (view: EditorView) => {
               runQuery(view);
               return true;
             },
@@ -3925,7 +3768,7 @@ export default function SqlEditor() {
     return () => {
       view.destroy();
     };
-  }, [runQuery, uniqueSeasons]);
+  }, [runQuery, uniqueSeasons, editorRef]);
 
   const isJson = (str: string): boolean => {
     try {
