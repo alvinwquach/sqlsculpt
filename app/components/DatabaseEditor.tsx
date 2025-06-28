@@ -419,7 +419,6 @@ const evaluateCondition = (
   value: string,
   table: Table
 ): boolean => {
-  // Implementation of evaluateCondition (replace with your actual logic)
   const columnValue = row[column as keyof PowerRanger];
   const compareValue = value.replace(/^'|'$/g, "");
   const columnDef = table.columns.find(
@@ -455,6 +454,38 @@ export default function SqlEditor() {
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
   const [tooltip, setTooltip] = useState<string | null>("");
 
+  const getUniqueValues = useCallback(
+    (column: keyof PowerRanger, columnType: string, table: Table): string[] => {
+      const values = new Set<string>();
+      table.data?.forEach((row) => {
+        const value = row[column];
+        if (Array.isArray(value)) {
+          value.forEach((v) => values.add(`'${v}'`));
+        } else if (value !== null && value !== undefined) {
+          values.add(
+            columnType === "text" || columnType === "date"
+              ? `'${value}'`
+              : value.toString()
+          );
+        }
+      });
+      return Array.from(values).slice(0, 10);
+    },
+    []
+  );
+
+  const getLikePatternSuggestions = useCallback(
+    (table: Table, column: keyof PowerRanger): string[] => {
+      const values = getUniqueValues(
+        column,
+        table.columns.find((col) => col.name === column)?.type || "text",
+        table
+      );
+      return values.map((value) => `%${value.replace(/^'|'$/g, "")}%`);
+    },
+    [getUniqueValues]
+  );
+
   const uniqueSeasons = useCallback(() => {
     const seasons = new Set<number>();
     Object.values(tables).forEach((table) => {
@@ -464,21 +495,6 @@ export default function SqlEditor() {
     });
     return Array.from(seasons);
   }, []);
-
-  const evaluateLikeCondition = (
-    columnValue: string | number,
-    pattern: string
-  ): boolean => {
-    const cleanPattern = pattern.replace(/^'|'$/g, "");
-    const regex = new RegExp(
-      `^${cleanPattern
-        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        .replace(/%/g, ".*")
-        .replace(/_/g, ".")}$`,
-      "i"
-    );
-    return regex.test(String(columnValue));
-  };
 
   const evaluateBetweenCondition = (
     row: PowerRanger,
@@ -2672,42 +2688,6 @@ export default function SqlEditor() {
           detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
         }));
     };
-
-    const getUniqueValues = useCallback(
-      (
-        column: keyof PowerRanger,
-        columnType: string,
-        table: Table
-      ): string[] => {
-        const values = new Set<string>();
-        table.data?.forEach((row) => {
-          const value = row[column];
-          if (Array.isArray(value)) {
-            value.forEach((v) => values.add(`'${v}'`));
-          } else if (value !== null && value !== undefined) {
-            values.add(
-              columnType === "text" || columnType === "date"
-                ? `'${value}'`
-                : value.toString()
-            );
-          }
-        });
-        return Array.from(values).slice(0, 10);
-      },
-      []
-    );
-
-    const getLikePatternSuggestions = useCallback(
-      (table: Table, column: keyof PowerRanger): string[] => {
-        const values = getUniqueValues(
-          column,
-          table.columns.find((col) => col.name === column)?.type || "text",
-          table
-        );
-        return values.map((value) => `%${value.replace(/^'|'$/g, "")}%`);
-      },
-      [getUniqueValues]
-    );
 
     const formatColumnName = (name: string): string => {
       return name
