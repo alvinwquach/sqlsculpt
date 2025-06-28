@@ -412,6 +412,21 @@ function Tooltip({ message }: TooltipProps) {
   );
 }
 
+const evaluateLikeCondition = (
+  columnValue: string | number,
+  pattern: string
+): boolean => {
+  const cleanPattern = pattern.replace(/^'|'$/g, "");
+  const regex = new RegExp(
+    `^${cleanPattern
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/%/g, ".*")
+      .replace(/_/g, ".")}$`,
+    "i"
+  );
+  return regex.test(String(columnValue));
+};
+
 const evaluateCondition = (
   row: PowerRanger,
   column: string,
@@ -420,33 +435,76 @@ const evaluateCondition = (
   table: Table
 ): boolean => {
   const columnValue = row[column as keyof PowerRanger];
-  const compareValue = value.replace(/^'|'$/g, "");
-  const columnDef = table.columns.find(
-    (col) => col.name.toLowerCase() === column.toLowerCase()
-  );
+  const columnType = table.columns.find(
+    (col: { name: string; type: string; notNull: boolean }) =>
+      col.name === column
+  )?.type;
 
-  if (!columnDef) return false;
+  if (operator.toUpperCase() === "LIKE") {
+    if (columnType === "text" || columnType === "date") {
+      return evaluateLikeCondition(String(columnValue), value);
+    } else if (columnType === "text[]") {
+      const typedColumnValue = columnValue as string[];
+      if (Array.isArray(typedColumnValue)) {
+        return typedColumnValue.some((item) =>
+          evaluateLikeCondition(item, value)
+        );
+      }
+      return false;
+    }
+    return false;
+  }
+
+  const cleanValue = value.replace(/^'|'$/g, "");
+  let typedColumnValue: string | number | string[];
+  let typedValue: string | number;
+
+  if (columnType === "integer" || columnType === "float") {
+    typedColumnValue = Number(columnValue);
+    typedValue = Number(cleanValue);
+    if (isNaN(typedColumnValue) || isNaN(typedValue)) {
+      return false;
+    }
+  } else if (columnType === "date" || columnType === "text") {
+    typedColumnValue = String(columnValue);
+    typedValue = cleanValue;
+  } else if (columnType === "text[]") {
+    typedColumnValue = columnValue as string[];
+    typedValue = cleanValue;
+
+    if (Array.isArray(typedColumnValue)) {
+      switch (operator.toUpperCase()) {
+        case "=":
+          return typedColumnValue.includes(typedValue);
+        case "!=":
+          return !typedColumnValue.includes(typedValue);
+        default:
+          return false;
+      }
+    }
+    return false;
+  } else {
+    return false;
+  }
 
   switch (operator.toUpperCase()) {
     case "=":
-      return columnValue === compareValue;
+      return typedColumnValue === typedValue;
     case "!=":
-      return columnValue !== compareValue;
+      return typedColumnValue !== typedValue;
     case ">":
-      return Number(columnValue) > Number(compareValue);
+      return typedColumnValue > typedValue;
     case "<":
-      return Number(columnValue) < Number(compareValue);
+      return typedColumnValue < typedValue;
     case ">=":
-      return Number(columnValue) >= Number(compareValue);
+      return typedColumnValue >= typedValue;
     case "<=":
-      return Number(columnValue) <= Number(compareValue);
-    case "LIKE":
-      const pattern = compareValue.replace(/%/g, ".*").replace(/_/g, ".");
-      return new RegExp(`^${pattern}$`, "i").test(String(columnValue));
+      return typedColumnValue <= typedValue;
     default:
       return false;
   }
 };
+
 
 export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
