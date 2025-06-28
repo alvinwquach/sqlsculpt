@@ -432,7 +432,7 @@ const evaluateCondition = (
   column: string,
   operator: string,
   value: string,
-  table: PowerRangersData
+  table: Table
 ): boolean => {
   const columnValue = row[column as keyof PowerRanger];
   const columnType = table.columns.find(
