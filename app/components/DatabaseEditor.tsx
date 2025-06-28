@@ -23,7 +23,7 @@ interface Column {
 interface Table {
   tableName: string;
   columns: Column[];
-  data: Record<string, any>[];
+  data: PowerRanger[];
 }
 
 interface CompletionOption {
