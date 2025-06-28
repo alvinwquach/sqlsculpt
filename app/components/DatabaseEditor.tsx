@@ -1822,7 +1822,6 @@ export default function SqlEditor() {
         > = [];
 
         if (joinType.toUpperCase() === "RIGHT") {
-          // RIGHT JOIN: Start with the right table (secondTable) and include all its rows
           secondTable.data.forEach((rightRow) => {
             let matched = false;
             firstTable.data.forEach((leftRow) => {
@@ -1883,7 +1882,6 @@ export default function SqlEditor() {
             }
           });
         } else {
-          // INNER JOIN and LEFT JOIN: Start with the left table (firstTable)
           firstTable.data.forEach((leftRow) => {
             let matched = false;
             secondTable.data.forEach((rightRow) => {
@@ -1944,64 +1942,6 @@ export default function SqlEditor() {
             }
           });
         }
-
-        // firstTable.data.forEach((leftRow) => {
-        //   let matched = false;
-        //   secondTable.data.forEach((rightRow) => {
-        //     const leftValue = leftRow[leftColumn as keyof PowerRanger];
-        //     const rightValue = rightRow[rightColumn as keyof PowerRanger];
-        //     let additionalConditionMet = true;
-
-        //     if (onTableOrAlias && onColumn && onValue) {
-        //       const actualTableName =
-        //         tableMap[onTableOrAlias.toLowerCase()] ||
-        //         onTableOrAlias.toLowerCase();
-        //       const value =
-        //         actualTableName === firstTableName.toLowerCase()
-        //           ? leftRow[onColumn as keyof PowerRanger]
-        //           : rightRow[onColumn as keyof PowerRanger];
-        //       const compareValue = onValue.replace(/^'|'$/g, "");
-        //       additionalConditionMet = String(value) === compareValue;
-        //     }
-
-        //     if (leftValue === rightValue && additionalConditionMet) {
-        //       matched = true;
-        //       const resultRow: Record<
-        //         string,
-        //         string | number | string[] | null
-        //       > = {};
-        //       fields.forEach((field) => {
-        //         const actualTableName =
-        //           tableMap[field.table.toLowerCase()] ||
-        //           field.table.toLowerCase();
-        //         const key = field.alias || `${field.table}.${field.name}`;
-        //         if (actualTableName === firstTableName.toLowerCase()) {
-        //           resultRow[key] = leftRow[field.name as keyof PowerRanger];
-        //         } else {
-        //           resultRow[key] = rightRow[field.name as keyof PowerRanger];
-        //         }
-        //       });
-        //       resultData.push(resultRow);
-        //     }
-        //   });
-
-        //   if (joinType.toUpperCase() === "LEFT" && !matched) {
-        //     const resultRow: Record<string, string | number | string[] | null> =
-        //       {};
-        //     fields.forEach((field) => {
-        //       const actualTableName =
-        //         tableMap[field.table.toLowerCase()] ||
-        //         field.table.toLowerCase();
-        //       const key = field.alias || `${field.table}.${field.name}`;
-        //       if (actualTableName === firstTableName.toLowerCase()) {
-        //         resultRow[key] = leftRow[field.name as keyof PowerRanger];
-        //       } else {
-        //         resultRow[key] = null;
-        //       }
-        //     });
-        //     resultData.push(resultRow);
-        //   }
-        // });
 
         if (whereClause) {
           const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
