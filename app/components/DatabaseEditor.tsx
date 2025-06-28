@@ -2715,13 +2715,13 @@ export default function SqlEditor() {
       };
 
       const getUniqueValues = (
-        column: string,
+        column: keyof PowerRanger,
         columnType: string,
         table: Table
       ): string[] => {
         const values = new Set<string>();
         table.data?.forEach((row) => {
-          const value = row[column.toLowerCase()];
+          const value = row[column];
           if (Array.isArray(value)) {
             value.forEach((v) => values.add(`'${v}'`));
           } else if (value !== null && value !== undefined) {
@@ -2735,15 +2735,17 @@ export default function SqlEditor() {
         return Array.from(values).slice(0, 10);
       };
 
-      const getLikePatternSuggestions = (
-        column: string,
-        columnType: string,
-        table: Table
-      ): string[] => {
-        if (columnType !== "text") return [];
-        const values = getUniqueValues(column, columnType, table);
-        return values.map((val) => `'${val.replace(/'/g, "")}%'`);
-      };
+      const getLikePatternSuggestions = useCallback(
+        (table: Table, column: keyof PowerRanger): string[] => {
+          const values = getUniqueValues(
+            column,
+            table.columns.find((col) => col.name === column)?.type || "text",
+            table
+          );
+          return values.map((value) => `%${value.replace(/^'|'$/g, "")}%`);
+        },
+        [getUniqueValues]
+      );
 
       const formatColumnName = (name: string): string => {
         return name
@@ -3401,14 +3403,57 @@ export default function SqlEditor() {
           const operator = match[4];
           const value1 = match[5];
           if (tables[tableName]) {
-            const columnType = tables[tableName].columns.find(
+            const columnDef = tables[tableName].columns.find(
               (col) => col.name.toLowerCase() === column?.toLowerCase()
-            )?.type;
+            );
+            if (
+              columnDef &&
+              (column as keyof PowerRanger) in tables[tableName].data[0]
+            ) {
+              const columnType = columnDef.type;
 
-            if (operator.toUpperCase() === "BETWEEN") {
+              if (operator.toUpperCase() === "BETWEEN") {
+                const sampleValues = getUniqueValues(
+                  column as keyof PowerRanger,
+                  columnType,
+                  tables[tableName]
+                );
+                return {
+                  from: word?.from ?? cursorPos,
+                  options: sampleValues.map((value) => ({
+                    label: value,
+                    type: "value",
+                    apply: value + (value1 ? "" : " AND "),
+                    detail: value1
+                      ? "Second value for BETWEEN"
+                      : "First value for BETWEEN",
+                  })),
+                };
+              }
+
+              if (operator.toUpperCase() === "LIKE") {
+                const likePatterns = getLikePatternSuggestions(
+                  tables[tableName],
+                  column as keyof PowerRanger
+                );
+                return {
+                  from: word?.from ?? cursorPos,
+                  options: likePatterns.map((pattern) => ({
+                    label: pattern,
+                    type: "value",
+                    apply: pattern,
+                    detail: "LIKE pattern",
+                  })),
+                };
+              }
+
+              if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
+                return null;
+              }
+
               const sampleValues = getUniqueValues(
-                column,
-                columnType || "text",
+                column as keyof PowerRanger,
+                columnType,
                 tables[tableName]
               );
               return {
@@ -3416,49 +3461,11 @@ export default function SqlEditor() {
                 options: sampleValues.map((value) => ({
                   label: value,
                   type: "value",
-                  apply: value + (value1 ? "" : " AND "),
-                  detail: value1
-                    ? "Second value for BETWEEN"
-                    : "First value for BETWEEN",
+                  apply: value,
+                  detail: "Value",
                 })),
               };
             }
-
-            if (operator.toUpperCase() === "LIKE") {
-              const likePatterns = getLikePatternSuggestions(
-                column,
-                columnType || "text",
-                tables[tableName]
-              );
-              return {
-                from: word?.from ?? cursorPos,
-                options: likePatterns.map((pattern) => ({
-                  label: pattern,
-                  type: "value",
-                  apply: pattern,
-                  detail: "LIKE pattern",
-                })),
-              };
-            }
-
-            if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
-              return null;
-            }
-
-            const sampleValues = getUniqueValues(
-              column,
-              columnType || "text",
-              tables[tableName]
-            );
-            return {
-              from: word?.from ?? cursorPos,
-              options: sampleValues.map((value) => ({
-                label: value,
-                type: "value",
-                apply: value,
-                detail: "Value",
-              })),
-            };
           }
         }
       }
@@ -3808,14 +3815,64 @@ export default function SqlEditor() {
           const column = match[1];
           const operator = match[2];
           const value1 = match[3];
-          const columnType = table.columns.find(
+          const columnDef = table.columns.find(
             (col) => col.name.toLowerCase() === column?.toLowerCase()
-          )?.type;
+          );
+          if (columnDef && (column as keyof PowerRanger) in table.data[0]) {
+            const columnType = columnDef.type;
 
-          if (operator.toUpperCase() === "BETWEEN") {
+            if (operator.toUpperCase() === "BETWEEN") {
+              const sampleValues = getUniqueValues(
+                column as keyof PowerRanger,
+                columnType,
+                table
+              );
+              return {
+                from: word?.from ?? cursorPos,
+                options: sampleValues.map((value) => ({
+                  label: value,
+                  type: "value",
+                  apply: value + (value1 ? "" : " AND "),
+                  detail: value1
+                    ? "Second value for BETWEEN"
+                    : "First value for BETWEEN",
+                })),
+              };
+            }
+
+            if (operator.toUpperCase() === "LIKE") {
+              const likePatterns = getLikePatternSuggestions(
+                table,
+                column as keyof PowerRanger
+              );
+              return {
+                from: word?.from ?? cursorPos,
+                options: likePatterns.map((pattern) => ({
+                  label: pattern,
+                  type: "value",
+                  apply: pattern,
+                  detail: "LIKE pattern",
+                })),
+              };
+            }
+
+            if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
+              return {
+                from: word?.from ?? cursorPos,
+                options: [
+                  {
+                    label: "THEN",
+                    type: "keyword",
+                    apply: " THEN ",
+                    detail: "Specify output for condition",
+                  },
+                ],
+              };
+            }
+
             const sampleValues = getUniqueValues(
-              column,
-              columnType || "text",
+              column as keyof PowerRanger,
+              columnType,
               table
             );
             return {
@@ -3823,59 +3880,11 @@ export default function SqlEditor() {
               options: sampleValues.map((value) => ({
                 label: value,
                 type: "value",
-                apply: value + (value1 ? "" : " AND "),
-                detail: value1
-                  ? "Second value for BETWEEN"
-                  : "First value for BETWEEN",
+                apply: value + " ",
+                detail: "Value",
               })),
             };
           }
-
-          if (operator.toUpperCase() === "LIKE") {
-            const likePatterns = getLikePatternSuggestions(
-              column,
-              columnType || "text",
-              table
-            );
-            return {
-              from: word?.from ?? cursorPos,
-              options: likePatterns.map((pattern) => ({
-                label: pattern,
-                type: "value",
-                apply: pattern,
-                detail: "LIKE pattern",
-              })),
-            };
-          }
-
-          if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
-            return {
-              from: word?.from ?? cursorPos,
-              options: [
-                {
-                  label: "THEN",
-                  type: "keyword",
-                  apply: " THEN ",
-                  detail: "Specify output for condition",
-                },
-              ],
-            };
-          }
-
-          const sampleValues = getUniqueValues(
-            column,
-            columnType || "text",
-            table
-          );
-          return {
-            from: word?.from ?? cursorPos,
-            options: sampleValues.map((value) => ({
-              label: value,
-              type: "value",
-              apply: value + " ",
-              detail: "Value",
-            })),
-          };
         }
       }
 
