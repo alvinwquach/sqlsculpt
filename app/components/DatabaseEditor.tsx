@@ -34,10 +34,6 @@ interface CompletionOption {
   boost?: number;
 }
 
-interface Tables {
-  [key: string]: Table;
-}
-
 interface PowerRanger {
   id: number;
   user: string;
@@ -422,22 +418,15 @@ export default function SqlEditor() {
   const [viewMode, setViewMode] = useState<"json" | "table">("json");
   const [tooltip, setTooltip] = useState<string | null>("");
 
-  const uniqueSeasons = (tableName: string): number[] => {
-    const table = tables[tableName.toLowerCase()];
-    if (!table) {
-      throw new Error(`Table '${tableName}' does not exist`);
-    }
-    return Array.from(
-      new Set(table.data.map((row: PowerRanger) => row.season_id))
-    ).sort((a, b) => a - b);
-  };
-
-  const formatColumnName = (columnName: string): string => {
-    return columnName
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(" ");
-  };
+  const uniqueSeasons = useCallback(() => {
+    const seasons = new Set<number>();
+    Object.values(tables).forEach((table) => {
+      table.data.forEach((row) => {
+        seasons.add(row.season_id);
+      });
+    });
+    return Array.from(seasons);
+  }, [tables]);
 
   const evaluateLikeCondition = (
     columnValue: string | number,
@@ -463,8 +452,7 @@ export default function SqlEditor() {
   ): boolean => {
     const columnValue = row[column as keyof PowerRanger];
     const columnType = table.columns.find(
-      (col: { name: string; type: string; notNull: boolean }) =>
-        col.name === column
+      (col: Column) => col.name === column
     )?.type;
 
     const cleanValue1 = value1.replace(/^'|'$/g, "");
@@ -501,8 +489,7 @@ export default function SqlEditor() {
   ): boolean => {
     const columnValue = row[column as keyof PowerRanger];
     const columnType = table.columns.find(
-      (col: { name: string; type: string; notNull: boolean }) =>
-        col.name === column
+      (col: Column) => col.name === column
     )?.type;
 
     if (operator.toUpperCase() === "LIKE") {
@@ -2703,200 +2690,6 @@ export default function SqlEditor() {
   );
 
   useEffect(() => {
-    const getUniqueValues = (
-      column: string,
-      columnType: string | undefined,
-      table: PowerRangersData
-    ): string[] => {
-      if (!columnType) return [];
-
-      if (columnType === "integer" || columnType === "float") {
-        return Array.from(
-          new Set(
-            table.data
-              .map((row: PowerRanger) =>
-                Number(row[column as keyof PowerRanger])
-              )
-              .filter((val) => !isNaN(val))
-              .map((val) => val.toString())
-          )
-        ).sort((a, b) => Number(a) - Number(b));
-      }
-
-      if (columnType === "date" || columnType === "text") {
-        if (column.toLowerCase() === "season_id") {
-          return uniqueSeasons(table.tableName)
-            .map((season: number) => `'${season}'`)
-            .sort();
-        }
-        return Array.from(
-          new Set(
-            table.data
-              .map(
-                (row: PowerRanger) =>
-                  `'${String(row[column as keyof PowerRanger]).replace(
-                    /'/g,
-                    "''"
-                  )}'`
-              )
-              .filter((val) => val !== "''")
-          )
-        ).sort();
-      }
-
-      if (columnType === "text[]") {
-        return Array.from(
-          new Set(
-            table.data
-              .flatMap(
-                (row: PowerRanger) =>
-                  (
-                    row[column as keyof PowerRanger] as string[] | undefined
-                  )?.map((val) => `'${String(val).replace(/'/g, "''")}'`) || []
-              )
-              .filter((val) => val !== "''")
-          )
-        ).sort();
-      }
-
-      return [];
-    };
-
-    const getLikePatternSuggestions = (
-      column: string,
-      columnType: string | undefined,
-      table: PowerRangersData
-    ): string[] => {
-      if (columnType !== "text" && columnType !== "text[]") return [];
-
-      const values = Array.from(
-        new Set(
-          columnType === "text[]"
-            ? table.data
-                .flatMap(
-                  (row: PowerRanger) =>
-                    (
-                      row[column as keyof PowerRanger] as string[] | undefined
-                    )?.map((val) => String(val)) || []
-                )
-                .filter((val) => val)
-            : table.data
-                .map((row: PowerRanger) =>
-                  String(row[column as keyof PowerRanger])
-                )
-                .filter((val) => val)
-        )
-      );
-
-      const patterns: string[] = [];
-      values.forEach((value: string) => {
-        const len = value.length;
-        // 1. Exact match
-        patterns.push(`'${value.replace(/'/g, "''")}'`);
-        // 2. Prefix patterns (e.g., 'B%')
-        for (let i = 1; i <= Math.min(len, 4); i++) {
-          const prefixPattern = `'${value.slice(0, i)}%'`;
-          if (!patterns.includes(prefixPattern)) {
-            patterns.push(prefixPattern);
-          }
-        }
-        // 3. Suffix patterns (e.g., '%ue')
-        for (let i = 1; i <= Math.min(len, 4); i++) {
-          const suffixPattern = `'%${value.slice(-i)}'`;
-          if (!patterns.includes(suffixPattern)) {
-            patterns.push(suffixPattern);
-          }
-        }
-        // 4. Contains patterns (e.g., '%lu%')
-        for (let i = 1; i < len; i++) {
-          for (let j = i + 1; j <= len; j++) {
-            const substring = value.slice(i, j);
-            if (substring.length >= 1 && substring.length <= 4) {
-              const containsPattern = `'%${substring}%'`;
-              if (!patterns.includes(containsPattern)) {
-                patterns.push(containsPattern);
-              }
-            }
-          }
-        }
-        // 5. Single character replacement with underscore (e.g., 'B_ue')
-        if (len >= 2) {
-          for (let i = 0; i < len; i++) {
-            const pattern = `'${value.slice(0, i)}${value.slice(i + 1)}'`;
-            if (!patterns.includes(pattern)) {
-              patterns.push(pattern);
-            }
-            const underscorePattern = `'${value.slice(0, i)}${
-              value[i]
-            }_${value.slice(i + 1)}'`;
-            if (!patterns.includes(underscorePattern)) {
-              patterns.push(underscorePattern);
-            }
-          }
-        }
-        // 6. Patterns with underscores for each character (e.g., 'B___')
-        if (len > 1) {
-          const underscorePattern = `'${Array(len).fill("_").join("")}'`;
-          if (!patterns.includes(underscorePattern)) {
-            patterns.push(underscorePattern);
-          }
-        }
-        // 7. Partial prefix with underscore (e.g., 'Bl_e')
-        if (len > 2) {
-          for (let i = 2; i < len; i++) {
-            const partialPattern = `'${value.slice(0, i - 1)}${
-              value[i - 1]
-            }_${value.slice(i)}'`;
-            if (!patterns.includes(partialPattern)) {
-              patterns.push(partialPattern);
-            }
-          }
-        }
-      });
-      // 8. Generic patterns based on column
-      patterns.push(`'%${column.slice(0, 1).toUpperCase()}%'`);
-      patterns.push(`'${column.slice(0, 1).toUpperCase()}%'`);
-      patterns.push(`'%${column.slice(0, 1).toLowerCase()}%'`);
-
-      return Array.from(new Set(patterns)).sort();
-    };
-
-    const getColumnOptions = (
-      excludeFields: string[],
-      table: PowerRangersData
-    ): CompletionOption[] =>
-      table.columns
-        .filter((col) => !excludeFields.includes(col.name.toLowerCase()))
-        .map((col) => ({
-          label: col.name,
-          type: "field",
-          detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-          apply: col.name,
-        }));
-
-    const getUsedColumnsInWhere = (
-      whereClause: string,
-      table: PowerRangersData
-    ): string[] => {
-      const usedColumns: string[] = [];
-      const conditionParts = whereClause
-        .split(/\s+(AND|OR)\s+/i)
-        .filter((_, index) => index % 2 === 0)
-        .map((part) => part.trim());
-      for (const part of conditionParts) {
-        const conditionMatch = part.match(
-          /^(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN|IS NULL|IS NOT NULL)/i
-        );
-        if (conditionMatch) {
-          const column = conditionMatch[1].toLowerCase();
-          if (table.columns.some((col) => col.name.toLowerCase() === column)) {
-            usedColumns.push(column);
-          }
-        }
-      }
-      return Array.from(new Set(usedColumns));
-    };
-
     const completion = (ctx: CompletionContext) => {
       const word = ctx.matchBefore(/[\w*']*|^/);
       const docText = ctx.state.doc.toString().toLowerCase();
@@ -3520,7 +3313,6 @@ export default function SqlEditor() {
         );
         if (match) {
           const tableName = match[1].toLowerCase();
-          const alias = match[2]?.toLowerCase() || tableName;
           const columnName = match[3].toLowerCase();
           if (
             tables[tableName]?.columns.some(
@@ -3605,7 +3397,6 @@ export default function SqlEditor() {
         const match = docText.match(valuePattern);
         if (match) {
           const tableName = match[1].toLowerCase();
-          const alias = match[2]?.toLowerCase() || tableName;
           const column = match[3];
           const operator = match[4];
           const value1 = match[5];
@@ -4345,7 +4136,6 @@ export default function SqlEditor() {
           const firstTable = match[1].toLowerCase();
           const firstAlias = match[2]?.toLowerCase() || firstTable;
           const secondTable = match[3].toLowerCase();
-          const secondAlias = match[4]?.toLowerCase() || secondTable;
           const columnName = match[6].toLowerCase();
           const tableOrAlias = match[5].toLowerCase();
           const targetTable =
@@ -4419,7 +4209,6 @@ export default function SqlEditor() {
           const firstAlias = match[2]?.toLowerCase() || firstTable;
           const secondTable = match[3].toLowerCase();
           const secondAlias = match[4]?.toLowerCase() || secondTable;
-          const columnName = match[6].toLowerCase();
           const tableOrAlias = match[5].toLowerCase();
           const firstTableUsed =
             tableOrAlias === firstTable || tableOrAlias === firstAlias;
