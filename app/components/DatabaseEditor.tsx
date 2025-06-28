@@ -521,6 +521,114 @@ const tables: Record<string, PowerRangersData> = {
       },
     ],
   },
+  power_rangers_in_space: {
+    tableName: "power_rangers_in_space",
+    columns: [
+      { name: "id", type: "integer", notNull: true },
+      { name: "user", type: "text", notNull: true },
+      { name: "ranger_color", type: "text", notNull: true },
+      { name: "ranger_designation", type: "text", notNull: true },
+      { name: "weapon", type: "text[]", notNull: true },
+      { name: "season_id", type: "integer", notNull: true },
+      { name: "joined_date", type: "date", notNull: true },
+      { name: "status", type: "text", notNull: true },
+      { name: "power_level", type: "float", notNull: true },
+      { name: "location", type: "text", notNull: true },
+      { name: "gear", type: "text[]", notNull: true },
+      { name: "zord", type: "text[]", notNull: true },
+    ],
+    data: [
+      {
+        id: 14,
+        user: "Andros",
+        ranger_color: "Red",
+        ranger_designation: "Red Space Ranger",
+        weapon: ["Spiral Saber", "Astro Blaster"],
+        season_id: 4,
+        joined_date: "1998-02-06",
+        status: "Active",
+        power_level: 98.7,
+        location: "Space",
+        gear: [
+          "Astro Morpher",
+          "Battlizer",
+          "Red Battlizer Armor",
+          "Red Galaxy Glider",
+        ],
+        zord: ["Astro Megazord", "Delta Megazord", "Mega V1"],
+      },
+      {
+        id: 15,
+        user: "Theodore J. Jarvis Johnson",
+        ranger_color: "Blue",
+        ranger_designation: "Blue Space Ranger",
+        weapon: ["Astro Axe", "Astro Blaster"],
+        season_id: 4,
+        joined_date: "1998-02-06",
+        status: "Active",
+        power_level: 97.5,
+        location: "Space",
+        gear: ["Astro Morpher", "Blue Galaxy Glider"],
+        zord: ["Mega V3"],
+      },
+      {
+        id: 16,
+        user: "Carlos Vallerte",
+        ranger_color: "Black",
+        ranger_designation: "Black Space Ranger",
+        weapon: ["Lunar Lance", "Astro Blaster"],
+        season_id: 4,
+        joined_date: "1998-02-06",
+        status: "Active",
+        power_level: 96.3,
+        location: "Space",
+        gear: ["Astro Morpher", "Black Galaxy Glider"],
+        zord: ["Mega V2"],
+      },
+      {
+        id: 17,
+        user: "Ashley Hammond",
+        ranger_color: "Yellow",
+        ranger_designation: "Yellow Space Ranger",
+        weapon: ["Star Slinger", "Astro Blaster"],
+        season_id: 4,
+        joined_date: "1998-02-06",
+        status: "Active",
+        power_level: 94.8,
+        location: "Space",
+        gear: ["Astro Morpher", "Yellow Galaxy Glider"],
+        zord: ["Mega V4"],
+      },
+      {
+        id: 18,
+        user: "Cassie Chan",
+        ranger_color: "Pink",
+        ranger_designation: "Pink Space Ranger",
+        weapon: ["Satellite Stunner", "Astro Blaster"],
+        season_id: 4,
+        joined_date: "1998-02-06",
+        status: "Active",
+        power_level: 95.2,
+        location: "Space",
+        gear: ["Astro Morpher", "Pink Galaxy Glider"],
+        zord: ["Mega V5"],
+      },
+      {
+        id: 19,
+        user: "Zhane",
+        ranger_color: "Silver",
+        ranger_designation: "Silver Space Ranger",
+        weapon: ["Super Silverizer"],
+        season_id: 4,
+        joined_date: "1998-02-06",
+        status: "Active",
+        power_level: 99.0,
+        location: "Space",
+        gear: ["Digimorpher", "Galactic Rover", "Silver Cycle"],
+        zord: ["Mega Winger"],
+      },
+    ],
+  },
 };
 
 interface ViewToggleProps {
@@ -882,7 +990,7 @@ export default function SqlEditor() {
       );
 
       const joinMatch = query.match(
-        /^SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+AS\s+(\w+))?\s+(INNER|LEFT)\s+JOIN\s+(\w+)(?:\s+AS\s+(\w+))?\s+ON\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)(?:\s+AND\s+(\w+)\.(\w+)\s*=\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))?(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?\s*;?$/i
+        /^SELECT\s+(.+?)\s+FROM\s+([\w]+(?:_[\w]+)*)(?:\s+AS\s+(\w+))?\s+(INNER|LEFT|RIGHT)\s+JOIN\s+([\w]+(?:_[\w]+)*)(?:\s+AS\s+(\w+))?\s+ON\s+([\w]+(?:_[\w]+)*)\.(\w+)\s*=\s*([\w]+(?:_[\w]+)*)\.(\w+)(?:\s+AND\s+([\w]+(?:_[\w]+)*)\.(\w+)\s*=\s*('[^']*'|[^' ]\w*|\d+(?:\.\d+)?))?(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?\s*;?$/i
       );
 
       if (
@@ -897,7 +1005,7 @@ export default function SqlEditor() {
         !joinMatch
       ) {
         setResult(
-          "Error: Query must be 'SHOW TABLES', 'DESCRIBE <table>', or a valid SELECT query with supported clauses (SELECT, DISTINCT, COUNT, SUM, MAX, MIN, AVG, ROUND, GROUP BY, HAVING, WHERE, ORDER BY, LIMIT, INNER JOIN, LEFT JOIN)"
+          "Error: Query must be 'SHOW TABLES', 'DESCRIBE <table>', or a valid SELECT query with supported clauses (SELECT, DISTINCT, COUNT, SUM, MAX, MIN, AVG, ROUND, GROUP BY, HAVING, WHERE, ORDER BY, LIMIT, INNER JOIN, LEFT JOIN, RIGHT JOIN)"
         );
         setTooltip(null);
         return false;
@@ -1713,27 +1821,108 @@ export default function SqlEditor() {
           Record<string, string | number | string[] | null>
         > = [];
 
-        firstTable.data.forEach((leftRow) => {
-          let matched = false;
+        if (joinType.toUpperCase() === "RIGHT") {
           secondTable.data.forEach((rightRow) => {
-            const leftValue = leftRow[leftColumn as keyof PowerRanger];
-            const rightValue = rightRow[rightColumn as keyof PowerRanger];
-            let additionalConditionMet = true;
+            let matched = false;
+            firstTable.data.forEach((leftRow) => {
+              const leftValue = leftRow[leftColumn as keyof PowerRanger];
+              const rightValue = rightRow[rightColumn as keyof PowerRanger];
+              let additionalConditionMet = true;
 
-            if (onTableOrAlias && onColumn && onValue) {
-              const actualTableName =
-                tableMap[onTableOrAlias.toLowerCase()] ||
-                onTableOrAlias.toLowerCase();
-              const value =
-                actualTableName === firstTableName.toLowerCase()
-                  ? leftRow[onColumn as keyof PowerRanger]
-                  : rightRow[onColumn as keyof PowerRanger];
-              const compareValue = onValue.replace(/^'|'$/g, "");
-              additionalConditionMet = String(value) === compareValue;
+              if (onTableOrAlias && onColumn && onValue) {
+                const actualTableName =
+                  tableMap[onTableOrAlias.toLowerCase()] ||
+                  onTableOrAlias.toLowerCase();
+                const value =
+                  actualTableName === firstTableName.toLowerCase()
+                    ? leftRow[onColumn as keyof PowerRanger]
+                    : rightRow[onColumn as keyof PowerRanger];
+                const compareValue = onValue.replace(/^'|'$/g, "");
+                additionalConditionMet = String(value) === compareValue;
+              }
+
+              if (leftValue === rightValue && additionalConditionMet) {
+                matched = true;
+                const resultRow: Record<
+                  string,
+                  string | number | string[] | null
+                > = {};
+                fields.forEach((field) => {
+                  const actualTableName =
+                    tableMap[field.table.toLowerCase()] ||
+                    field.table.toLowerCase();
+                  const key = field.alias || `${field.table}.${field.name}`;
+                  if (actualTableName === firstTableName.toLowerCase()) {
+                    resultRow[key] = leftRow[field.name as keyof PowerRanger];
+                  } else {
+                    resultRow[key] = rightRow[field.name as keyof PowerRanger];
+                  }
+                });
+                resultData.push(resultRow);
+              }
+            });
+
+            if (!matched) {
+              const resultRow: Record<
+                string,
+                string | number | string[] | null
+              > = {};
+              fields.forEach((field) => {
+                const actualTableName =
+                  tableMap[field.table.toLowerCase()] ||
+                  field.table.toLowerCase();
+                const key = field.alias || `${field.table}.${field.name}`;
+                if (actualTableName === secondTableName.toLowerCase()) {
+                  resultRow[key] = rightRow[field.name as keyof PowerRanger];
+                } else {
+                  resultRow[key] = null;
+                }
+              });
+              resultData.push(resultRow);
             }
+          });
+        } else {
+          firstTable.data.forEach((leftRow) => {
+            let matched = false;
+            secondTable.data.forEach((rightRow) => {
+              const leftValue = leftRow[leftColumn as keyof PowerRanger];
+              const rightValue = rightRow[rightColumn as keyof PowerRanger];
+              let additionalConditionMet = true;
 
-            if (leftValue === rightValue && additionalConditionMet) {
-              matched = true;
+              if (onTableOrAlias && onColumn && onValue) {
+                const actualTableName =
+                  tableMap[onTableOrAlias.toLowerCase()] ||
+                  onTableOrAlias.toLowerCase();
+                const value =
+                  actualTableName === firstTableName.toLowerCase()
+                    ? leftRow[onColumn as keyof PowerRanger]
+                    : rightRow[onColumn as keyof PowerRanger];
+                const compareValue = onValue.replace(/^'|'$/g, "");
+                additionalConditionMet = String(value) === compareValue;
+              }
+
+              if (leftValue === rightValue && additionalConditionMet) {
+                matched = true;
+                const resultRow: Record<
+                  string,
+                  string | number | string[] | null
+                > = {};
+                fields.forEach((field) => {
+                  const actualTableName =
+                    tableMap[field.table.toLowerCase()] ||
+                    field.table.toLowerCase();
+                  const key = field.alias || `${field.table}.${field.name}`;
+                  if (actualTableName === firstTableName.toLowerCase()) {
+                    resultRow[key] = leftRow[field.name as keyof PowerRanger];
+                  } else {
+                    resultRow[key] = rightRow[field.name as keyof PowerRanger];
+                  }
+                });
+                resultData.push(resultRow);
+              }
+            });
+
+            if (joinType.toUpperCase() === "LEFT" && !matched) {
               const resultRow: Record<
                 string,
                 string | number | string[] | null
@@ -1746,30 +1935,13 @@ export default function SqlEditor() {
                 if (actualTableName === firstTableName.toLowerCase()) {
                   resultRow[key] = leftRow[field.name as keyof PowerRanger];
                 } else {
-                  resultRow[key] = rightRow[field.name as keyof PowerRanger];
+                  resultRow[key] = null;
                 }
               });
               resultData.push(resultRow);
             }
           });
-
-          if (joinType.toUpperCase() === "LEFT" && !matched) {
-            const resultRow: Record<string, string | number | string[] | null> =
-              {};
-            fields.forEach((field) => {
-              const actualTableName =
-                tableMap[field.table.toLowerCase()] ||
-                field.table.toLowerCase();
-              const key = field.alias || `${field.table}.${field.name}`;
-              if (actualTableName === firstTableName.toLowerCase()) {
-                resultRow[key] = leftRow[field.name as keyof PowerRanger];
-              } else {
-                resultRow[key] = null;
-              }
-            });
-            resultData.push(resultRow);
-          }
-        });
+        }
 
         if (whereClause) {
           const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
@@ -2983,7 +3155,7 @@ export default function SqlEditor() {
     };
 
     const tableMatches = fullDocText.matchAll(
-      /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?)?/gi
+      /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?)?/gi
     );
     const tablesInQuery: { name: string; alias?: string }[] = [];
     for (const match of tableMatches) {
@@ -3148,7 +3320,7 @@ export default function SqlEditor() {
       };
     }
 
-    // 3. After SELECT, suggest columns from all tables in query, *, aggregates, DISTINCT, CASE
+    // 3. After SELECT, suggest columns from all tables, *, aggregates, DISTINCT, CASE
     if (/^select\s*$/i.test(docText)) {
       const options: CompletionOption[] = [];
       availableTables.forEach(({ name, alias }) => {
@@ -3357,11 +3529,12 @@ export default function SqlEditor() {
       };
     }
 
-    // 9. After FROM table_name, suggest INNER JOIN, LEFT JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
+    // 9. After FROM table_name, suggest INNER JOIN, LEFT JOIN, RIGHT JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
     if (
       new RegExp(`from\\s+(\\w+)(?:\\s+\\w+)?\\s*$`, "i").test(docText) &&
       !/inner\s+join\s*$/i.test(docText) &&
-      !/left\s+join\s*$/i.test(docText)
+      !/left\s+join\s*$/i.test(docText) &&
+      !/right\s+join\s*$/i.test(docText)
     ) {
       const tableNameMatch = docText.match(/from\s+(\w+)(?:\s+\w+)?\s*$/i);
       if (tableNameMatch) {
@@ -3382,6 +3555,13 @@ export default function SqlEditor() {
                 apply: "LEFT JOIN ",
                 detail:
                   "Join with another table, keeping all rows from the left table",
+              },
+              {
+                label: "RIGHT JOIN",
+                type: "keyword",
+                apply: "RIGHT JOIN ",
+                detail:
+                  "Join with another table, keeping all rows from the right table",
               },
               {
                 label: "WHERE",
@@ -3508,7 +3688,7 @@ export default function SqlEditor() {
     // 12. After WHERE, suggest columns from all tables
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s*$`,
         "i"
       ).test(docText)
     ) {
@@ -3524,7 +3704,7 @@ export default function SqlEditor() {
     // 13. After a complete WHERE condition, suggest AND, OR, GROUP BY, ORDER BY, or LIMIT
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+.*?(?:\\w+\\.\\w+\\s*(=|\\!=|>|<|>=|<=|LIKE)\\s*('[^']*'|[^' ]\\w*)|\\w+\\.\\w+\\s*BETWEEN\\s*('[^']*'|[^' ]\\w*)\\s*AND\\s*('[^']*'|[^' ]\\w*)|\\w+\\.\\w+\\s*(IS NULL|IS NOT NULL))\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+.*?(?:\\w+\\.\\w+\\s*(=|\\!=|>|<|>=|<=|LIKE)\\s*('[^']*'|[^' ]\\w*)|\\w+\\.\\w+\\s*BETWEEN\\s*('[^']*'|[^' ]\\w*)\\s*AND\\s*('[^']*'|[^' ]\\w*)|\\w+\\.\\w+\\s*(IS NULL|IS NOT NULL))\\s*$`,
         "i"
       ).test(docText)
     ) {
@@ -3568,12 +3748,12 @@ export default function SqlEditor() {
     // 14. After WHERE table.column, suggest operators
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+.*?\\b(\\w+)\\.(\\w+)\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+.*?\\b(\\w+)\\.(\\w+)\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?)?\s+where\s+.*?\b(\w+)\.(\w+)\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?)?\s+where\s+.*?\b(\w+)\.(\w+)\s*$/i
       );
       if (match) {
         const tableOrAlias = match[6].toLowerCase();
@@ -3658,7 +3838,7 @@ export default function SqlEditor() {
 
     // 15. After WHERE table.column operator, suggest values
     const valuePattern = new RegExp(
-      `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+(?:.*?\\s+(?:and|or)\\s+)?(\\w+)\\.(\\w+)\\s*(=|\\!=|>|<|>=|<=|LIKE|BETWEEN)\\s*(?:('[^']*'|[^' ]\\w*)?)?$`,
+      `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+(?:.*?\\s+(?:and|or)\\s+)?(\\w+)\\.(\\w+)\\s*(=|\\!=|>|<|>=|<=|LIKE|BETWEEN)\\s*(?:('[^']*'|[^' ]\\w*)?)?$`,
       "i"
     );
     if (valuePattern.test(docText)) {
@@ -3747,12 +3927,12 @@ export default function SqlEditor() {
     // 16. After AND or OR, suggest remaining columns from all tables
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+.*?\\s+(and|or)\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)?\\s+where\\s+.*?\\s+(and|or)\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?)?\s+where\s+(.+?)\s+(?:and|or)\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?)?\s+where\s+(.+?)\s+(?:and|or)\s*$/i
       );
       if (match) {
         const whereClause = match[6] || "";
@@ -3773,7 +3953,7 @@ export default function SqlEditor() {
     // 17. Suggest number after LIMIT
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+\\w+)?\\s*(?:(inner|left)\\s+join\\s+(\\w+)(?:\\s+\\w+)?)?\\s+(?:where\\s+.*?\\s+)?(?:group\\s+by\\s+.*?\\s+)?(?:order\\s+by\\s+.*?\\s+)?limit\\s*$`,
+        `from\\s+(\\w+)(?:\\s+\\w+)?\\s*(?:(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+\\w+)?)?\\s+(?:where\\s+.*?\\s+)?(?:group\\s+by\\s+.*?\\s+)?(?:order\\s+by\\s+.*?\\s+)?limit\\s*$`,
         "i"
       ).test(docText)
     ) {
@@ -4348,15 +4528,15 @@ export default function SqlEditor() {
       };
     }
 
-    // 34. After INNER JOIN or LEFT JOIN, suggest other table names
+    // 34. After INNER JOIN, LEFT JOIN, or RIGHT JOIN, suggest other table names
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+\\w+)?\\s+(inner|left)\\s+join\\s*(\\w*)$`,
+        `from\\s+(\\w+)(?:\\s+\\w+)?\\s+(inner|left|right)\\s+join\\s*(\\w*)$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+\w+)?\s+(inner|left)\s+join\s*(\w*)$/i
+        /from\s+(\w+)(?:\s+\w+)?\s+(inner|left|right)\s+join\s*(\w*)$/i
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
@@ -4383,16 +4563,16 @@ export default function SqlEditor() {
       }
     }
 
-    // 35. After INNER JOIN or LEFT JOIN table_name, suggest ON
+    // 35. After INNER JOIN, LEFT JOIN, or RIGHT JOIN table_name, suggest ON
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s*$`,
         "i"
       ).test(docText) &&
       !/on\s*$/i.test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?\s*$/i
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
@@ -4416,12 +4596,12 @@ export default function SqlEditor() {
     // 36. After ON, suggest columns from both tables
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s*$/i
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
@@ -4450,12 +4630,12 @@ export default function SqlEditor() {
     // 37. After ON table1.column, suggest operators
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*$/i
       );
       if (match) {
         const tableOrAlias = match[6].toLowerCase();
@@ -4517,12 +4697,12 @@ export default function SqlEditor() {
     // 38. After ON table1.column =, suggest columns from the other table
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
@@ -4543,15 +4723,15 @@ export default function SqlEditor() {
       }
     }
 
-    // 39. After ON table1.column = table2.column, suggest INNER JOIN, LEFT JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
+    // 39. After ON table1.column = table2.column, suggest INNER JOIN, LEFT JOIN, RIGHT JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$/i
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
@@ -4572,6 +4752,13 @@ export default function SqlEditor() {
                 apply: "LEFT JOIN ",
                 detail:
                   "Join with another table, keeping all rows from the left table",
+              },
+              {
+                label: "RIGHT JOIN",
+                type: "keyword",
+                apply: "RIGHT JOIN ",
+                detail:
+                  "Join with another table, keeping all rows from the right table",
               },
               {
                 label: "WHERE",
