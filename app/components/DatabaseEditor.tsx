@@ -1295,7 +1295,6 @@ export default function SqlEditor() {
           return false;
         }
 
-        // Parse fields
         const fields: Array<{
           name: string;
           table: string;
@@ -1374,7 +1373,6 @@ export default function SqlEditor() {
           }
         }
 
-        // Perform CROSS JOIN (Cartesian product)
         let resultData: Array<
           Record<string, string | number | string[] | null>
         > = [];
@@ -1397,7 +1395,6 @@ export default function SqlEditor() {
           });
         });
 
-        // Apply WHERE clause
         if (whereClause) {
           const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
           const conditions: Array<{
@@ -1610,7 +1607,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Apply ORDER BY
         if (orderByColumn) {
           const field = fields.find(
             (f) =>
@@ -3923,7 +3919,6 @@ export default function SqlEditor() {
       return Array.from(columns);
     };
 
-    // Parse tables and aliases from the query
     const tableMatches = fullDocText.matchAll(
       /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left|right|full(?:\s+outer)?|cross)\s+join\s+(\w+)(?:\s+(\w+))?)?/gi
     );
