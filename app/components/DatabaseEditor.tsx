@@ -426,7 +426,7 @@ export default function SqlEditor() {
       });
     });
     return Array.from(seasons);
-  }, [tables]);
+  }, []);
 
   const evaluateLikeCondition = (
     columnValue: string | number,
@@ -2686,7 +2686,7 @@ export default function SqlEditor() {
       setTooltip(null);
       return false;
     },
-    [setResult, setTooltip]
+    [setResult, setTooltip, evaluateCondition]
   );
 
   useEffect(() => {
