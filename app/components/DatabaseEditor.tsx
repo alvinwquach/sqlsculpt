@@ -1764,7 +1764,7 @@ export default function SqlEditor() {
               if (actualTableName === firstTableName.toLowerCase()) {
                 resultRow[key] = leftRow[field.name as keyof PowerRanger];
               } else {
-                resultRow[key] = null; 
+                resultRow[key] = null;
               }
             });
             resultData.push(resultRow);
@@ -2982,7 +2982,6 @@ export default function SqlEditor() {
       return Array.from(columns);
     };
 
-    // Extract all tables and aliases from the query
     const tableMatches = fullDocText.matchAll(
       /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left)\s+join\s+(\w+)(?:\s+(\w+))?)?/gi
     );
@@ -3000,7 +2999,6 @@ export default function SqlEditor() {
       }
     }
 
-    // Default to all tables if none are explicitly matched
     const availableTables =
       tablesInQuery.length > 0
         ? tablesInQuery
