@@ -891,6 +891,135 @@ const tables: Record<string, PowerRangersData> = {
       },
     ],
   },
+  power_rangers_time_force: {
+    tableName: "power_rangers_time_force",
+    columns: [
+      { name: "id", type: "integer", notNull: true },
+      { name: "user", type: "text", notNull: true },
+      { name: "ranger_color", type: "text", notNull: true },
+      { name: "ranger_designation", type: "text", notNull: true },
+      { name: "weapon", type: "text[]", notNull: true },
+      { name: "season_id", type: "integer", notNull: true },
+      { name: "joined_date", type: "date", notNull: true },
+      { name: "status", type: "text", notNull: true },
+      { name: "power_level", type: "float", notNull: true },
+      { name: "location", type: "text", notNull: true },
+      { name: "gear", type: "text[]", notNull: true },
+      { name: "zord", type: "text[]", notNull: true },
+    ],
+    data: [
+      {
+        id: 26,
+        user: "Jen Scotts",
+        ranger_color: "Pink",
+        ranger_designation: "Pink Time Force Ranger",
+        weapon: ["Chrono Saber", "Chrono Blaster", "V5"],
+        season_id: 7,
+        joined_date: "2001-02-03",
+        status: "Active",
+        power_level: 93.5,
+        location: "Silver Hills",
+        gear: [
+          "Chrono Morpher",
+          "Visual Scanner",
+          "Time Force Badge",
+          "Pink Vector Cycle",
+        ],
+        zord: ["Time Flier 5"],
+      },
+      {
+        id: 27,
+        user: "Wesley Collins",
+        ranger_color: "Red",
+        ranger_designation: "Red Time Force Ranger",
+        weapon: ["Chrono Saber", "Chrono Blaster", "V1", "Electro Booster"],
+        season_id: 7,
+        joined_date: "2001-02-03",
+        status: "Active",
+        power_level: 96.2,
+        location: "Silver Hills",
+        gear: [
+          "Chrono Morpher",
+          "Time Force Badge",
+          "Battle Warrior Armor",
+          "Strata Cycle",
+          "Red Vector Cycle",
+        ],
+        zord: ["Time Flier 1"],
+      },
+      {
+        id: 28,
+        user: "Lucas Kendall",
+        ranger_color: "Blue",
+        ranger_designation: "Blue Time Force Ranger",
+        weapon: ["Chrono Saber", "Chrono Blaster", "V2"],
+        season_id: 7,
+        joined_date: "2001-02-03",
+        status: "Active",
+        power_level: 91.8,
+        location: "Silver Hills",
+        gear: [
+          "Chrono Morpher",
+          "Visual Scanner",
+          "Time Force Badge",
+          "Blue Vector Cycle",
+        ],
+        zord: ["Time Flier 2"],
+      },
+      {
+        id: 29,
+        user: "Katie Walker",
+        ranger_color: "Yellow",
+        ranger_designation: "Yellow Time Force Ranger",
+        weapon: ["Chrono Saber", "Chrono Blaster", "V4"],
+        season_id: 7,
+        joined_date: "2001-02-03",
+        status: "Active",
+        power_level: 90.7,
+        location: "Silver Hills",
+        gear: [
+          "Chrono Morpher",
+          "Visual Scanner",
+          "Time Force Badge",
+          "Yellow Vector Cycle",
+        ],
+        zord: ["Time Flier 4"],
+      },
+      {
+        id: 30,
+        user: "Trip",
+        ranger_color: "Green",
+        ranger_designation: "Green Time Force Ranger",
+        weapon: ["Chrono Saber", "Chrono Blaster", "V3"],
+        season_id: 7,
+        joined_date: "2001-02-03",
+        status: "Active",
+        power_level: 92.1,
+        location: "Silver Hills",
+        gear: [
+          "Chrono Morpher",
+          "Visual Scanner",
+          "Time Force Badge",
+          "Green Vector Cycle",
+        ],
+        zord: ["Time Flier 3"],
+      },
+      {
+        id: 31,
+        user: "Eric Myers",
+        ranger_color: "Quantum",
+        ranger_designation: "Quantum Ranger",
+        weapon: ["Quantum Defender", "Silver Guardian Blaster"],
+        season_id: 7,
+        joined_date: "2001-02-03",
+        status: "Active",
+        power_level: 98.5,
+        location: "Silver Hills",
+        gear: ["Quantum Morpher", "TF Eagle", "Mega Battle Armor"],
+        zord: ["Quantasaurus Rex"],
+      },
+    ],
+  },
 };
 
 interface ViewToggleProps {
@@ -1684,7 +1813,7 @@ export default function SqlEditor() {
         !crossJoinMatch
       ) {
         setResult(
-          "Error: Query must be 'SHOW TABLES', 'DESCRIBE <table>', or a valid SELECT query with supported clauses (SELECT, DISTINCT, COUNT, SUM, MAX, MIN, AVG, ROUND, GROUP BY, HAVING, WHERE, ORDER BY, LIMIT, INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, FULL JOIN, CROSS JOIN)"
+          "Error: Query must be 'SHOW TABLES', 'DESCRIBE <table>', or a valid SELECT query with supported clauses (SELECT, DISTINCT, COUNT, SUM, MAX, MIN, AVG, ROUND, GROUP BY, HAVING, WHERE, ORDER BY, LIMIT, INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, FULL JOIN, CROSS JOIN, SELF JOIN)"
         );
         setTooltip(null);
         return false;
@@ -2336,6 +2465,16 @@ export default function SqlEditor() {
         const effectiveFirstTableName = firstTableAlias || firstTableName;
         const effectiveSecondTableName = secondTableAlias || secondTableName;
 
+        if (
+          firstTableName.toLowerCase() === secondTableName.toLowerCase() &&
+          effectiveFirstTableName.toLowerCase() ===
+            effectiveSecondTableName.toLowerCase()
+        ) {
+          setResult("Error: Self join requires distinct table aliases");
+          setTooltip(null);
+          return false;
+        }
+
         const tableMap = {
           [effectiveFirstTableName.toLowerCase()]: firstTableName.toLowerCase(),
           [effectiveSecondTableName.toLowerCase()]:
@@ -2417,6 +2556,7 @@ export default function SqlEditor() {
             return false;
           }
         }
+
         const fields: Array<{
           name: string;
           table: string;
@@ -2494,18 +2634,22 @@ export default function SqlEditor() {
             });
           }
         }
+
         let resultData: Array<
           Record<string, string | number | string[] | null>
         > = [];
         const matchedLeftRows = new Set<number>();
         const matchedRightRows = new Set<number>();
 
+        const leftData = firstTable.data;
+        const rightData = secondTable.data;
+
         if (
           joinType.toUpperCase() === "FULL" ||
           joinType.toUpperCase() === "FULL OUTER"
         ) {
-          firstTable.data.forEach((leftRow, leftIndex) => {
-            secondTable.data.forEach((rightRow, rightIndex) => {
+          leftData.forEach((leftRow, leftIndex) => {
+            rightData.forEach((rightRow, rightIndex) => {
               const leftValue = leftRow[leftColumn as keyof PowerRanger];
               const rightValue = rightRow[rightColumn as keyof PowerRanger];
               let additionalConditionMet = true;
@@ -2545,7 +2689,7 @@ export default function SqlEditor() {
             });
           });
 
-          firstTable.data.forEach((leftRow, leftIndex) => {
+          leftData.forEach((leftRow, leftIndex) => {
             if (!matchedLeftRows.has(leftIndex)) {
               const resultRow: Record<
                 string,
@@ -2566,7 +2710,7 @@ export default function SqlEditor() {
             }
           });
 
-          secondTable.data.forEach((rightRow, rightIndex) => {
+          rightData.forEach((rightRow, rightIndex) => {
             if (!matchedRightRows.has(rightIndex)) {
               const resultRow: Record<
                 string,
@@ -2587,9 +2731,9 @@ export default function SqlEditor() {
             }
           });
         } else if (joinType.toUpperCase() === "RIGHT") {
-          secondTable.data.forEach((rightRow) => {
+          rightData.forEach((rightRow, rightIndex) => {
             let matched = false;
-            firstTable.data.forEach((leftRow) => {
+            leftData.forEach((leftRow) => {
               const leftValue = leftRow[leftColumn as keyof PowerRanger];
               const rightValue = rightRow[rightColumn as keyof PowerRanger];
               let additionalConditionMet = true;
@@ -2647,9 +2791,9 @@ export default function SqlEditor() {
             }
           });
         } else {
-          firstTable.data.forEach((leftRow) => {
+          leftData.forEach((leftRow, leftIndex) => {
             let matched = false;
-            secondTable.data.forEach((rightRow) => {
+            rightData.forEach((rightRow, rightIndex) => {
               const leftValue = leftRow[leftColumn as keyof PowerRanger];
               const rightValue = rightRow[rightColumn as keyof PowerRanger];
               let additionalConditionMet = true;
@@ -2920,10 +3064,13 @@ export default function SqlEditor() {
           });
         }
 
+        // Apply ORDER BY
         if (orderByColumn) {
           const field = fields.find(
             (f) =>
               f.name.toLowerCase() === orderByColumn.toLowerCase() ||
+              `${f.table}.${f.name}`.toLowerCase() ===
+                orderByColumn.toLowerCase() ||
               f.alias?.toLowerCase() === orderByColumn.toLowerCase()
           );
           if (!field) {
@@ -2960,6 +3107,7 @@ export default function SqlEditor() {
           });
         }
 
+        // Apply LIMIT
         if (limitValue !== undefined) {
           const limit = parseInt(limitValue, 10);
           if (isNaN(limit) || limit <= 0) {
@@ -4307,34 +4455,36 @@ export default function SqlEditor() {
                 label: "INNER JOIN",
                 type: "keyword",
                 apply: " INNER JOIN ",
-                detail: "Join with another table, returning matching rows",
+                detail:
+                  "Join with another table (including self-join), returning matching rows",
               },
               {
                 label: "LEFT JOIN",
                 type: "keyword",
                 apply: " LEFT JOIN ",
                 detail:
-                  "Join with another table, keeping all rows from the left table",
+                  "Join with another table (including self-join), keeping all rows from the left table",
               },
               {
                 label: "RIGHT JOIN",
                 type: "keyword",
                 apply: " RIGHT JOIN ",
                 detail:
-                  "Join with another table, keeping all rows from the right table",
+                  "Join with another table (including self-join), keeping all rows from the right table",
               },
               {
                 label: "FULL OUTER JOIN",
                 type: "keyword",
                 apply: " FULL OUTER JOIN ",
                 detail:
-                  "Join with another table, keeping all rows from both tables",
+                  "Join with another table (including self-join), keeping all rows from both tables",
               },
               {
                 label: "CROSS JOIN",
                 type: "keyword",
                 apply: " CROSS JOIN ",
-                detail: "Combine all rows from both tables (Cartesian product)",
+                detail:
+                  "Combine all rows from both tables (including self-join, Cartesian product)",
               },
               {
                 label: "WHERE",
@@ -4366,7 +4516,7 @@ export default function SqlEditor() {
       }
     }
 
-    // 10. After CROSS JOIN, suggest other table names
+    // 10. After CROSS JOIN, suggest all table names (including self-join)
     if (
       new RegExp(
         `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+cross\\s+join\\s*(\\w*)$`,
@@ -4390,7 +4540,9 @@ export default function SqlEditor() {
               label: tableName,
               type: "table",
               apply: tableName + " ",
-              detail: "Table name",
+              detail: `Table name${
+                tableName.toLowerCase() === firstTable ? " (self-join)" : ""
+              }`,
             })),
           };
         }
@@ -5379,7 +5531,7 @@ export default function SqlEditor() {
       };
     }
 
-    // 36. After INNER JOIN, LEFT JOIN, RIGHT JOIN, or FULL OUTER JOIN, suggest table names
+    // 36. After INNER JOIN, LEFT JOIN, RIGHT JOIN, or FULL OUTER JOIN, suggest all table names (including self-join)
     if (
       new RegExp(
         `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s*(\\w*)$`,
@@ -5403,7 +5555,9 @@ export default function SqlEditor() {
               label: tableName,
               type: "table",
               apply: tableName + " ",
-              detail: "Table name",
+              detail: `Table name${
+                tableName.toLowerCase() === firstTable ? " (self-join)" : ""
+              }`,
             })),
           };
         }
@@ -5432,7 +5586,9 @@ export default function SqlEditor() {
                 label: "ON",
                 type: "keyword",
                 apply: " ON ",
-                detail: "Specify join condition",
+                detail: `Specify join condition${
+                  firstTable === secondTable ? " (self-join)" : ""
+                }`,
               },
             ],
           };
@@ -5440,7 +5596,7 @@ export default function SqlEditor() {
       }
     }
 
-    // 38. After ON, suggest columns from both tables
+    // 38. After ON, suggest columns from both tables (including self-join with distinct aliases)
     if (
       new RegExp(
         `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s*$`,
@@ -5456,16 +5612,34 @@ export default function SqlEditor() {
         const secondTable = match[4].toLowerCase();
         const secondAlias = match[5]?.toLowerCase() || secondTable;
         if (tables[firstTable] && tables[secondTable]) {
+          if (firstTable === secondTable && firstAlias === secondAlias) {
+            return {
+              from: word?.from ?? cursorPos,
+              options: [],
+              detail:
+                "Error: Self-join requires distinct aliases for the same table",
+            };
+          }
           const firstTableColumns = getColumnOptions(
             [],
             tables[firstTable],
             firstAlias
-          );
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              firstTable === secondTable ? " (self-join)" : ""
+            }`,
+          }));
           const secondTableColumns = getColumnOptions(
             [],
             tables[secondTable],
             secondAlias
-          );
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              firstTable === secondTable ? " (self-join)" : ""
+            }`,
+          }));
           return {
             from: word?.from ?? cursorPos,
             options: [...firstTableColumns, ...secondTableColumns],
@@ -5541,7 +5715,7 @@ export default function SqlEditor() {
       }
     }
 
-    // 40. After ON table1.column =, suggest columns from the other table
+    // 40. After ON table1.column =, suggest columns from the other table (including self-join)
     if (
       new RegExp(
         `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
@@ -5560,11 +5734,29 @@ export default function SqlEditor() {
         const firstTableUsed =
           tableOrAlias === firstTable || tableOrAlias === firstAlias;
         if (tables[firstTable] && tables[secondTable]) {
+          if (firstTable === secondTable && firstAlias === secondAlias) {
+            return {
+              from: word?.from ?? cursorPos,
+              options: [],
+              detail:
+                "Error: Self-join requires distinct aliases for the same table",
+            };
+          }
           const targetTable = firstTableUsed ? secondTable : firstTable;
           const targetAlias = firstTableUsed ? secondAlias : firstAlias;
+          const columnOptions = getColumnOptions(
+            [],
+            tables[targetTable],
+            targetAlias
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              firstTable === secondTable ? " (self-join)" : ""
+            }`,
+          }));
           return {
             from: word?.from ?? cursorPos,
-            options: getColumnOptions([], tables[targetTable], targetAlias),
+            options: columnOptions,
           };
         }
       }
@@ -5591,28 +5783,29 @@ export default function SqlEditor() {
                 label: "INNER JOIN",
                 type: "keyword",
                 apply: " INNER JOIN ",
-                detail: "Join with another table, returning matching rows",
+                detail:
+                  "Join with another table (including self-join), returning matching rows",
               },
               {
                 label: "LEFT JOIN",
                 type: "keyword",
                 apply: " LEFT JOIN ",
                 detail:
-                  "Join with another table, keeping all rows from the left table",
+                  "Join with another table (including self-join), keeping all rows from the left table",
               },
               {
                 label: "RIGHT JOIN",
                 type: "keyword",
                 apply: " RIGHT JOIN ",
                 detail:
-                  "Join with another table, keeping all rows from the right table",
+                  "Join with another table (including self-join), keeping all rows from the right table",
               },
               {
                 label: "FULL OUTER JOIN",
                 type: "keyword",
                 apply: " FULL OUTER JOIN ",
                 detail:
-                  "Join with another table, keeping all rows from both tables",
+                  "Join with another table (including self-join), keeping all rows from both tables",
               },
               {
                 label: "WHERE",
