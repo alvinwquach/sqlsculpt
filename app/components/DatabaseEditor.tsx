@@ -2731,7 +2731,7 @@ export default function SqlEditor() {
             }
           });
         } else if (joinType.toUpperCase() === "RIGHT") {
-          rightData.forEach((rightRow, rightIndex) => {
+          rightData.forEach((rightRow) => {
             let matched = false;
             leftData.forEach((leftRow) => {
               const leftValue = leftRow[leftColumn as keyof PowerRanger];
@@ -2791,9 +2791,9 @@ export default function SqlEditor() {
             }
           });
         } else {
-          leftData.forEach((leftRow, leftIndex) => {
+          leftData.forEach((leftRow) => {
             let matched = false;
-            rightData.forEach((rightRow, rightIndex) => {
+            rightData.forEach((rightRow) => {
               const leftValue = leftRow[leftColumn as keyof PowerRanger];
               const rightValue = rightRow[rightColumn as keyof PowerRanger];
               let additionalConditionMet = true;
@@ -3064,7 +3064,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Apply ORDER BY
         if (orderByColumn) {
           const field = fields.find(
             (f) =>
@@ -3107,7 +3106,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Apply LIMIT
         if (limitValue !== undefined) {
           const limit = parseInt(limitValue, 10);
           if (isNaN(limit) || limit <= 0) {
@@ -3128,7 +3126,6 @@ export default function SqlEditor() {
           return false;
         }
       }
-
       const handleAggregate = (
         match: RegExpMatchArray,
         aggregateType: string,
