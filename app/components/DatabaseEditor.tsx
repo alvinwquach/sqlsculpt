@@ -2689,32 +2689,32 @@ export default function SqlEditor() {
     [setResult, setTooltip, evaluateCondition]
   );
 
-  useEffect(() => {
-    const completion = (ctx: CompletionContext) => {
-      const word = ctx.matchBefore(/[\w*']*|^/);
-      const docText = ctx.state.doc.toString().toLowerCase();
-      const fullDocText = ctx.state.doc.toString();
-      const cursorPos = ctx.pos;
+  const completion = (ctx: CompletionContext) => {
+    const word = ctx.matchBefore(/[\w*']*|^/);
+    const docText = ctx.state.doc.toString().toLowerCase();
+    const fullDocText = ctx.state.doc.toString();
+    const cursorPos = ctx.pos;
 
-      const getColumnOptions = (
-        alreadySelectedFields: string[],
-        targetTable: Table,
-        tableAlias: string | null = null
-      ): CompletionOption[] => {
-        const prefix = tableAlias || targetTable.tableName;
-        return targetTable.columns
-          .filter(
-            (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
-          )
-          .map((col) => ({
-            label: `${prefix}.${col.name}`,
-            type: "field",
-            apply: `${prefix}.${col.name} `,
-            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-          }));
-      };
+    const getColumnOptions = (
+      alreadySelectedFields: string[],
+      targetTable: Table,
+      tableAlias: string | null = null
+    ): CompletionOption[] => {
+      const prefix = tableAlias || targetTable.tableName;
+      return targetTable.columns
+        .filter(
+          (col) => !alreadySelectedFields.includes(col.name.toLowerCase())
+        )
+        .map((col) => ({
+          label: `${prefix}.${col.name}`,
+          type: "field",
+          apply: `${prefix}.${col.name} `,
+          detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+        }));
+    };
 
-      const getUniqueValues = (
+    const getUniqueValues = useCallback(
+      (
         column: keyof PowerRanger,
         columnType: string,
         table: Table
@@ -2733,352 +2733,315 @@ export default function SqlEditor() {
           }
         });
         return Array.from(values).slice(0, 10);
-      };
+      },
+      []
+    );    
 
-      const getLikePatternSuggestions = useCallback(
-        (table: Table, column: keyof PowerRanger): string[] => {
-          const values = getUniqueValues(
-            column,
-            table.columns.find((col) => col.name === column)?.type || "text",
-            table
-          );
-          return values.map((value) => `%${value.replace(/^'|'$/g, "")}%`);
-        },
-        [getUniqueValues]
+    const getLikePatternSuggestions = useCallback(
+      (table: Table, column: keyof PowerRanger): string[] => {
+        const values = getUniqueValues(
+          column,
+          table.columns.find((col) => col.name === column)?.type || "text",
+          table
+        );
+        return values.map((value) => `%${value.replace(/^'|'$/g, "")}%`);
+      },
+      [getUniqueValues]
+    );
+
+    const formatColumnName = (name: string): string => {
+      return name
+        .replace(/([A-Z])/g, "_$1")
+        .toLowerCase()
+        .replace(/^_/, "");
+    };
+
+    const getUsedColumnsInWhere = (
+      whereClause: string,
+      table: Table
+    ): string[] => {
+      const columns = new Set<string>();
+      const columnNames = table.columns.map((col) => col.name.toLowerCase());
+      whereClause.split(/\s+(and|or)\s+/i).forEach((condition) => {
+        columnNames.forEach((col) => {
+          if (new RegExp(`\\b${col}\\b`, "i").test(condition)) {
+            columns.add(col);
+          }
+        });
+      });
+      return Array.from(columns);
+    };
+
+    const tableMatch = fullDocText.match(/from\s+(\w+)/i);
+    const tableName = tableMatch ? tableMatch[1].toLowerCase() : null;
+    const table: Table =
+      tableName && tables[tableName]
+        ? tables[tableName]
+        : tables["mighty_morphin_power_rangers"];
+
+    if (!table) {
+      return null;
+    }
+
+    const selectMatch = fullDocText
+      .substring(0, cursorPos)
+      .match(
+        /^select\s+(?:distinct\s+|(?:(?:count|sum|max|min|avg|round|case)\s*\([\w*]+(?:,\s*\d+)?\)\s*(?:as\s+'.*?'\s*)?,)*)?(.+?)?(?:\s+from|$)/i
       );
 
-      const formatColumnName = (name: string): string => {
-        return name
-          .replace(/([A-Z])/g, "_$1")
-          .toLowerCase()
-          .replace(/^_/, "");
-      };
-
-      const getUsedColumnsInWhere = (
-        whereClause: string,
-        table: Table
-      ): string[] => {
-        const columns = new Set<string>();
-        const columnNames = table.columns.map((col) => col.name.toLowerCase());
-        whereClause.split(/\s+(and|or)\s+/i).forEach((condition) => {
-          columnNames.forEach((col) => {
-            if (new RegExp(`\\b${col}\\b`, "i").test(condition)) {
-              columns.add(col);
-            }
-          });
-        });
-        return Array.from(columns);
-      };
-
-      const tableMatch = fullDocText.match(/from\s+(\w+)/i);
-      const tableName = tableMatch ? tableMatch[1].toLowerCase() : null;
-      const table: Table =
-        tableName && tables[tableName]
-          ? tables[tableName]
-          : tables["mighty_morphin_power_rangers"];
-
-      if (!table) {
-        return null;
-      }
-
-      const selectMatch = fullDocText
-        .substring(0, cursorPos)
-        .match(
-          /^select\s+(?:distinct\s+|(?:(?:count|sum|max|min|avg|round|case)\s*\([\w*]+(?:,\s*\d+)?\)\s*(?:as\s+'.*?'\s*)?,)*)?(.+?)?(?:\s+from|$)/i
-        );
-
-      const alreadySelectedFields: string[] =
-        selectMatch && selectMatch[1]
-          ? selectMatch[1]
-              .split(/(?<!\([^()]*),(?![^()]*\))/)
-              .map((f) =>
-                f
-                  .trim()
-                  .replace(/\s+as\s+'.*?'$/i, "")
-                  .replace(
-                    /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i,
-                    "$1"
-                  )
-                  .replace(/^case\s+.*?\s+end$/i, "")
-                  .toLowerCase()
-              )
-              .filter((f) => f)
-          : [];
-
-      const selectFields: { field: string; index: number }[] =
-        selectMatch && selectMatch[1]
-          ? selectMatch[1]
-              .split(/(?<!\([^()]*),(?![^()]*\))/)
-              .map((f) => f.trim())
-              .filter((f) => f)
-              .map((f, index) => ({ field: f, index: index + 1 }))
-          : [];
-
-      const getAggregateOptions = (targetTable: Table): CompletionOption[] => [
-        {
-          label: "COUNT(*)",
-          type: "function",
-          apply: "COUNT(*) ",
-          detail: "Count all rows",
-        },
-        ...targetTable.columns.map((col) => ({
-          label: `COUNT(${col.name})`,
-          type: "function",
-          apply: `COUNT(${col.name}) `,
-          detail: `Count non-null values in ${col.name}`,
-        })),
-        ...targetTable.columns
-          .filter((col) => col.type === "integer" || col.type === "float")
-          .map((col) => ({
-            label: `SUM(${col.name})`,
-            type: "function",
-            apply: `SUM(${col.name}) `,
-            detail: `Sum values in ${col.name}`,
-          })),
-        ...targetTable.columns
-          .filter(
-            (col) =>
-              col.type === "integer" ||
-              col.type === "float" ||
-              col.type === "date"
-          )
-          .map((col) => ({
-            label: `MAX(${col.name})`,
-            type: "function",
-            apply: `MAX(${col.name}) `,
-            detail: `Maximum value in ${col.name}`,
-          })),
-        ...targetTable.columns
-          .filter(
-            (col) =>
-              col.type === "integer" ||
-              col.type === "float" ||
-              col.type === "date"
-          )
-          .map((col) => ({
-            label: `MIN(${col.name})`,
-            type: "function",
-            apply: `MIN(${col.name}) `,
-            detail: `Minimum value in ${col.name}`,
-          })),
-        ...targetTable.columns
-          .filter((col) => col.type === "integer" || col.type === "float")
-          .map((col) => ({
-            label: `AVG(${col.name})`,
-            type: "function",
-            apply: `AVG(${col.name}) `,
-            detail: `Average value in ${col.name}`,
-          })),
-        ...targetTable.columns
-          .filter((col) => col.type === "integer" || col.type === "float")
-          .map((col) => ({
-            label: `ROUND(${col.name}, `,
-            type: "function",
-            apply: `ROUND(${col.name}, `,
-            detail: `Round values in ${col.name} to specified decimals`,
-          })),
-        ...targetTable.columns
-          .filter((col) => col.type === "integer" || col.type === "float")
-          .map((col) => ({
-            label: `ROUND(AVG(${col.name}), `,
-            type: "function",
-            apply: `ROUND(AVG(${col.name}), `,
-            detail: `Round average of ${col.name} to specified decimals`,
-          })),
-      ];
-
-      // 1. Suggest SQL keywords when editor is empty or typing a keyword
-      if (/^\s*$|^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "SELECT",
-              type: "keyword",
-              apply: "SELECT ",
-              detail: "Select data from a table",
-            },
-            {
-              label: "DESCRIBE",
-              type: "keyword",
-              apply: "DESCRIBE ",
-              detail: "Describe table structure",
-            },
-            {
-              label: "SHOW TABLES",
-              type: "keyword",
-              apply: "SHOW TABLES",
-              detail: "List all tables",
-            },
-          ],
-        };
-      }
-
-      // 2. After DESCRIBE, suggest table names
-      if (/^describe\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: Object.keys(tables).map((tableName) => ({
-            label: tableName,
-            type: "table",
-            apply: tableName,
-            detail: "Table name",
-          })),
-        };
-      }
-
-      // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), AVG(column), ROUND(column, decimals), DISTINCT
-      if (/^select\s*$/i.test(docText)) {
-        const options: CompletionOption[] = getColumnOptions(
-          alreadySelectedFields,
-          table
-        );
-        options.unshift(
-          { label: "*", type: "field", detail: "all columns", apply: "*" },
-          {
-            label: "DISTINCT",
-            type: "keyword",
-            apply: "DISTINCT ",
-            detail: "Select unique values",
-          },
-          {
-            label: "CASE",
-            type: "keyword",
-            apply: "CASE ",
-            detail: "Conditional logic",
-          },
-          ...getAggregateOptions(table)
-        );
-        return { from: word?.from ?? cursorPos, options };
-      }
-
-      // 4. After SELECT DISTINCT, suggest columns
-      if (/^select\s+distinct\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: getColumnOptions(alreadySelectedFields, table),
-        };
-      }
-
-      // 5. After comma in SELECT, suggest remaining columns and aggregates
-      if (
-        /^select\s+(?:distinct\s+)?[\w\s,'*]+$/i.test(docText) &&
-        /,\s*$/.test(docText.substring(0, cursorPos)) &&
-        !docText.includes("from")
-      ) {
-        const options: CompletionOption[] = getColumnOptions(
-          alreadySelectedFields,
-          table
-        );
-        options.push(
-          {
-            label: "CASE",
-            type: "keyword",
-            apply: "CASE ",
-            detail: "Conditional logic",
-          },
-          ...getAggregateOptions(table)
-        );
-        return { from: word?.from ?? cursorPos, options };
-      }
-
-      // 6. After a field or aggregate (with or without alias), suggest , AS, FROM, GROUP BY
-      if (
-        /^select\s+(?:distinct\s+)?(?:[\w*]+|(?:count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)(?:\s+as\s+'.*?')?)(?:\s*,\s*(?:[\w*]+|(?:count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)(?:\s+as\s+'.*?')?))*\s*$/i.test(
-          fullDocText.substring(0, cursorPos).trim()
-        ) &&
-        !fullDocText.toLowerCase().includes("from")
-      ) {
-        const fieldsBeforeCursor = fullDocText.match(
-          /^select\s+(?:distinct\s+)?(.+)$/i
-        )?.[1];
-        if (fieldsBeforeCursor) {
-          const fields = fieldsBeforeCursor
-            .split(/(?<!\([^()]*),(?![^()]*\))/g)
-            .map((field) => field.trim())
-            .filter((f) => f);
-
-          const lastField = fields[fields.length - 1] || "";
-          const lastFieldClean = lastField
-            .replace(/\s+as\s+'.*?'$/i, "")
-            .trim();
-          const isAggregate =
-            /^(count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)$/i.test(
-              lastFieldClean
-            );
-          const isNestedAggregate =
-            /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i.test(
-              lastFieldClean
-            );
-          const isColumn =
-            lastFieldClean.toLowerCase() === "*" ||
-            table.columns.some(
-              (col) => col.name.toLowerCase() === lastFieldClean.toLowerCase()
-            );
-          const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
-
-          const cursorAfterFieldOrAggregate =
-            lastFieldClean.length > 0 ||
-            fullDocText.substring(0, cursorPos).trim().endsWith(lastFieldClean);
-
-          if (
-            (isColumn || isAggregate || isNestedAggregate) &&
-            cursorAfterFieldOrAggregate
-          ) {
-            const formattedAlias = isAggregate
-              ? lastFieldClean
-                  .match(/^(count|sum|max|min|avg|round)/i)?.[1]
-                  .toLowerCase()
-              : isNestedAggregate
-              ? lastFieldClean.match(
-                  /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*(\d+))?\)$/i
+    const alreadySelectedFields: string[] =
+      selectMatch && selectMatch[1]
+        ? selectMatch[1]
+            .split(/(?<!\([^()]*),(?![^()]*\))/)
+            .map((f) =>
+              f
+                .trim()
+                .replace(/\s+as\s+'.*?'$/i, "")
+                .replace(
+                  /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i,
+                  "$1"
                 )
-                ? "round_avg"
-                : undefined
-              : lastFieldClean.toLowerCase() === "*"
-              ? undefined
-              : formatColumnName(lastFieldClean);
+                .replace(/^case\s+.*?\s+end$/i, "")
+                .toLowerCase()
+            )
+            .filter((f) => f)
+        : [];
 
-            const options: CompletionOption[] = [
-              {
-                label: ",",
-                type: "operator",
-                apply: ", ",
-                detail: "Add another field",
-              },
-              {
-                label: "FROM",
-                type: "keyword",
-                apply: " FROM ",
-                detail: "Specify table",
-              },
-              {
-                label: "GROUP BY",
-                type: "keyword",
-                apply: " GROUP BY ",
-                detail: "Group results by columns",
-              },
-            ];
+    const selectFields: { field: string; index: number }[] =
+      selectMatch && selectMatch[1]
+        ? selectMatch[1]
+            .split(/(?<!\([^()]*),(?![^()]*\))/)
+            .map((f) => f.trim())
+            .filter((f) => f)
+            .map((f, index) => ({ field: f, index: index + 1 }))
+        : [];
 
-            if (!hasAlias && formattedAlias) {
-              options.unshift({
-                label: "AS",
-                type: "keyword",
-                apply: ` AS '${formattedAlias}' `,
-                detail: "Alias the column",
-              });
-            }
+    const getAggregateOptions = (targetTable: Table): CompletionOption[] => [
+      {
+        label: "COUNT(*)",
+        type: "function",
+        apply: "COUNT(*) ",
+        detail: "Count all rows",
+      },
+      ...targetTable.columns.map((col) => ({
+        label: `COUNT(${col.name})`,
+        type: "function",
+        apply: `COUNT(${col.name}) `,
+        detail: `Count non-null values in ${col.name}`,
+      })),
+      ...targetTable.columns
+        .filter((col) => col.type === "integer" || col.type === "float")
+        .map((col) => ({
+          label: `SUM(${col.name})`,
+          type: "function",
+          apply: `SUM(${col.name}) `,
+          detail: `Sum values in ${col.name}`,
+        })),
+      ...targetTable.columns
+        .filter(
+          (col) =>
+            col.type === "integer" ||
+            col.type === "float" ||
+            col.type === "date"
+        )
+        .map((col) => ({
+          label: `MAX(${col.name})`,
+          type: "function",
+          apply: `MAX(${col.name}) `,
+          detail: `Maximum value in ${col.name}`,
+        })),
+      ...targetTable.columns
+        .filter(
+          (col) =>
+            col.type === "integer" ||
+            col.type === "float" ||
+            col.type === "date"
+        )
+        .map((col) => ({
+          label: `MIN(${col.name})`,
+          type: "function",
+          apply: `MIN(${col.name}) `,
+          detail: `Minimum value in ${col.name}`,
+        })),
+      ...targetTable.columns
+        .filter((col) => col.type === "integer" || col.type === "float")
+        .map((col) => ({
+          label: `AVG(${col.name})`,
+          type: "function",
+          apply: `AVG(${col.name}) `,
+          detail: `Average value in ${col.name}`,
+        })),
+      ...targetTable.columns
+        .filter((col) => col.type === "integer" || col.type === "float")
+        .map((col) => ({
+          label: `ROUND(${col.name}, `,
+          type: "function",
+          apply: `ROUND(${col.name}, `,
+          detail: `Round values in ${col.name} to specified decimals`,
+        })),
+      ...targetTable.columns
+        .filter((col) => col.type === "integer" || col.type === "float")
+        .map((col) => ({
+          label: `ROUND(AVG(${col.name}), `,
+          type: "function",
+          apply: `ROUND(AVG(${col.name}), `,
+          detail: `Round average of ${col.name} to specified decimals`,
+        })),
+    ];
 
-            return { from: cursorPos, options };
-          }
-        }
-      }
+    // 1. Suggest SQL keywords when editor is empty or typing a keyword
+    if (/^\s*$|^s(el(ect)?)?$|^d(esc(ribe)?)?$|^sh(ow)?$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: "SELECT",
+            type: "keyword",
+            apply: "SELECT ",
+            detail: "Select data from a table",
+          },
+          {
+            label: "DESCRIBE",
+            type: "keyword",
+            apply: "DESCRIBE ",
+            detail: "Describe table structure",
+          },
+          {
+            label: "SHOW TABLES",
+            type: "keyword",
+            apply: "SHOW TABLES",
+            detail: "List all tables",
+          },
+        ],
+      };
+    }
 
-      // 7. After AS 'alias', suggest , FROM, GROUP BY
-      if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
+    // 2. After DESCRIBE, suggest table names
+    if (/^describe\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: Object.keys(tables).map((tableName) => ({
+          label: tableName,
+          type: "table",
+          apply: tableName,
+          detail: "Table name",
+        })),
+      };
+    }
+
+    // 3. After SELECT, suggest columns, *, COUNT(*), COUNT(column), SUM(column), MAX(column), MIN(column), AVG(column), ROUND(column, decimals), DISTINCT
+    if (/^select\s*$/i.test(docText)) {
+      const options: CompletionOption[] = getColumnOptions(
+        alreadySelectedFields,
+        table
+      );
+      options.unshift(
+        { label: "*", type: "field", detail: "all columns", apply: "*" },
+        {
+          label: "DISTINCT",
+          type: "keyword",
+          apply: "DISTINCT ",
+          detail: "Select unique values",
+        },
+        {
+          label: "CASE",
+          type: "keyword",
+          apply: "CASE ",
+          detail: "Conditional logic",
+        },
+        ...getAggregateOptions(table)
+      );
+      return { from: word?.from ?? cursorPos, options };
+    }
+
+    // 4. After SELECT DISTINCT, suggest columns
+    if (/^select\s+distinct\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: getColumnOptions(alreadySelectedFields, table),
+      };
+    }
+
+    // 5. After comma in SELECT, suggest remaining columns and aggregates
+    if (
+      /^select\s+(?:distinct\s+)?[\w\s,'*]+$/i.test(docText) &&
+      /,\s*$/.test(docText.substring(0, cursorPos)) &&
+      !docText.includes("from")
+    ) {
+      const options: CompletionOption[] = getColumnOptions(
+        alreadySelectedFields,
+        table
+      );
+      options.push(
+        {
+          label: "CASE",
+          type: "keyword",
+          apply: "CASE ",
+          detail: "Conditional logic",
+        },
+        ...getAggregateOptions(table)
+      );
+      return { from: word?.from ?? cursorPos, options };
+    }
+
+    // 6. After a field or aggregate (with or without alias), suggest , AS, FROM, GROUP BY
+    if (
+      /^select\s+(?:distinct\s+)?(?:[\w*]+|(?:count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)(?:\s+as\s+'.*?')?)(?:\s*,\s*(?:[\w*]+|(?:count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)(?:\s+as\s+'.*?')?))*\s*$/i.test(
+        fullDocText.substring(0, cursorPos).trim()
+      ) &&
+      !fullDocText.toLowerCase().includes("from")
+    ) {
+      const fieldsBeforeCursor = fullDocText.match(
+        /^select\s+(?:distinct\s+)?(.+)$/i
+      )?.[1];
+      if (fieldsBeforeCursor) {
+        const fields = fieldsBeforeCursor
+          .split(/(?<!\([^()]*),(?![^()]*\))/g)
+          .map((field) => field.trim())
+          .filter((f) => f);
+
+        const lastField = fields[fields.length - 1] || "";
+        const lastFieldClean = lastField
+          .replace(/\s+as\s+'.*?'$/i, "")
+          .trim();
+        const isAggregate =
+          /^(count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)$/i.test(
+            lastFieldClean
+          );
+        const isNestedAggregate =
+          /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i.test(
+            lastFieldClean
+          );
+        const isColumn =
+          lastFieldClean.toLowerCase() === "*" ||
+          table.columns.some(
+            (col) => col.name.toLowerCase() === lastFieldClean.toLowerCase()
+          );
+        const hasAlias = /\s+as\s+'.*?'$/i.test(lastField);
+
+        const cursorAfterFieldOrAggregate =
+          lastFieldClean.length > 0 ||
+          fullDocText.substring(0, cursorPos).trim().endsWith(lastFieldClean);
+
+        if (
+          (isColumn || isAggregate || isNestedAggregate) &&
+          cursorAfterFieldOrAggregate
+        ) {
+          const formattedAlias = isAggregate
+            ? lastFieldClean
+                .match(/^(count|sum|max|min|avg|round)/i)?.[1]
+                .toLowerCase()
+            : isNestedAggregate
+            ? lastFieldClean.match(
+                /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*(\d+))?\)$/i
+              )
+              ? "round_avg"
+              : undefined
+            : lastFieldClean.toLowerCase() === "*"
+            ? undefined
+            : formatColumnName(lastFieldClean);
+
+          const options: CompletionOption[] = [
             {
               label: ",",
               type: "operator",
@@ -3097,735 +3060,365 @@ export default function SqlEditor() {
               apply: " GROUP BY ",
               detail: "Group results by columns",
             },
-          ],
-        };
-      }
+          ];
 
-      // 8. After FROM, suggest table names
-      if (/from\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: Object.keys(tables).map((tableName) => ({
-            label: tableName,
-            type: "table",
-            apply: tableName + " ",
-            detail: "Table name",
-          })),
-        };
-      }
-
-      // 9. After FROM table_name, suggest INNER JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
-      if (
-        new RegExp(`from\\s+(\\w+)(?:\\s+\\w+)?\\s*$`, "i").test(docText) &&
-        !/inner\s+join\s*$/i.test(docText)
-      ) {
-        const tableNameMatch = docText.match(/from\s+(\w+)(?:\s+\w+)?\s*$/i);
-        if (tableNameMatch) {
-          const tableName = tableNameMatch[1].toLowerCase();
-          if (tables[tableName]) {
-            return {
-              from: word?.from ?? cursorPos,
-              options: [
-                {
-                  label: "INNER JOIN",
-                  type: "keyword",
-                  apply: "INNER JOIN ",
-                  detail: "Join with another table, returning matching rows",
-                },
-                {
-                  label: "WHERE",
-                  type: "keyword",
-                  apply: "WHERE ",
-                  detail: "Filter rows",
-                },
-                {
-                  label: "GROUP BY",
-                  type: "keyword",
-                  apply: "GROUP BY ",
-                  detail: "Group results by columns",
-                },
-                {
-                  label: "ORDER BY",
-                  type: "keyword",
-                  apply: "ORDER BY ",
-                  detail: "Sort results",
-                },
-                {
-                  label: "LIMIT",
-                  type: "keyword",
-                  apply: "LIMIT ",
-                  detail: "Limit number of rows",
-                },
-              ],
-            };
+          if (!hasAlias && formattedAlias) {
+            options.unshift({
+              label: "AS",
+              type: "keyword",
+              apply: ` AS '${formattedAlias}' `,
+              detail: "Alias the column",
+            });
           }
+
+          return { from: cursorPos, options };
         }
       }
+    }
 
-      // 10. After GROUP BY, suggest columns or numeric references
-      if (/group\s+by\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            ...getColumnOptions(alreadySelectedFields, table),
-            ...selectFields.map(({ field, index }) => ({
-              label: `${index}`,
-              type: "value",
-              apply: `${index}`,
-              detail: `Reference to ${field}`,
-            })),
-          ],
-        };
-      }
+    // 7. After AS 'alias', suggest , FROM, GROUP BY
+    if (/as\s*'.*?'\s*$/i.test(docText) && !docText.includes("from")) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: ",",
+            type: "operator",
+            apply: ", ",
+            detail: "Add another field",
+          },
+          {
+            label: "FROM",
+            type: "keyword",
+            apply: " FROM ",
+            detail: "Specify table",
+          },
+          {
+            label: "GROUP BY",
+            type: "keyword",
+            apply: " GROUP BY ",
+            detail: "Group results by columns",
+          },
+        ],
+      };
+    }
 
-      // 11. After GROUP BY column or number, suggest comma, remaining columns/numbers, HAVING, ORDER BY, or LIMIT
-      if (
-        /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
-      ) {
-        const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
-        const usedFields = groupByMatch
-          ? groupByMatch[1]
-              .split(",")
-              .map((f) => f.trim())
-              .filter((f) => f)
-          : [];
-        const availableColumns = table.columns.filter(
-          (col) => !usedFields.includes(col.name.toLowerCase())
-        );
-        const availableSelectFields = selectFields.filter(
-          ({ index }) => !usedFields.includes(`${index}`)
-        );
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: ",",
-              type: "operator",
-              apply: ", ",
-              detail: "Add another column",
-            },
-            {
-              label: "HAVING",
-              type: "keyword",
-              apply: " HAVING ",
-              detail: "Filter groups based on aggregate conditions",
-            },
-            {
-              label: "ORDER BY",
-              type: "keyword",
-              apply: " ORDER BY ",
-              detail: "Sort results",
-            },
-            {
-              label: "LIMIT",
-              type: "keyword",
-              apply: " LIMIT ",
-              detail: "Limit number of rows",
-            },
-            ...availableColumns.map((col) => ({
-              label: col.name,
-              type: "field",
-              apply: col.name,
-              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            })),
-            ...availableSelectFields.map(({ field, index }) => ({
-              label: `${index}`,
-              type: "value",
-              apply: `${index}`,
-              detail: `Reference to ${field}`,
-            })),
-          ],
-        };
-      }
+    // 8. After FROM, suggest table names
+    if (/from\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: Object.keys(tables).map((tableName) => ({
+          label: tableName,
+          type: "table",
+          apply: tableName + " ",
+          detail: "Table name",
+        })),
+      };
+    }
 
-      // 12. After WHERE, suggest columns
-      if (
-        new RegExp(`from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s*$`, "i").test(
-          docText
-        )
-      ) {
-        const tableNameMatch = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+where\s*$/i
-        );
-        if (tableNameMatch) {
-          const tableName = tableNameMatch[1].toLowerCase();
-          const alias = tableNameMatch[2]?.toLowerCase() || tableName;
-          if (tables[tableName]) {
-            return {
-              from: word?.from ?? cursorPos,
-              options: getColumnOptions([], tables[tableName], alias),
-            };
-          }
-        }
-      }
-
-      // 13. After a complete WHERE condition, suggest AND, OR, GROUP BY, ORDER BY, or LIMIT
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+\\w+)?\\s+where\\s+.*?(?:\\w+\\s*(=|\\!=|>|<|>=|<=|LIKE)\\s*('[^']*'|[^' ]\\w*)|\\w+\\s*BETWEEN\\s*('[^']*'|[^' ]\\w*)\\s*AND\\s*('[^']*'|[^' ]\\w*)|\\w+\\s*(IS NULL|IS NOT NULL))\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "AND",
-              type: "keyword",
-              apply: " AND ",
-              detail: "Combine with another condition (all must be true)",
-            },
-            {
-              label: "OR",
-              type: "keyword",
-              apply: " OR ",
-              detail: "Combine with another condition (any can be true)",
-            },
-            {
-              label: "GROUP BY",
-              type: "keyword",
-              apply: " GROUP BY ",
-              detail: "Group results by columns",
-            },
-            {
-              label: "ORDER BY",
-              type: "keyword",
-              apply: " ORDER BY ",
-              detail: "Sort results",
-            },
-            {
-              label: "LIMIT",
-              type: "keyword",
-              apply: " LIMIT ",
-              detail: "Limit number of rows",
-            },
-          ],
-        };
-      }
-
-      // 14. After WHERE column, suggest operators
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s+.*?\\b(\\w+)\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+where\s+.*?\\b(\w+)\s*$/i
-        );
-        if (match) {
-          const tableName = match[1].toLowerCase();
-          const columnName = match[3].toLowerCase();
-          if (
-            tables[tableName]?.columns.some(
-              (col) => col.name.toLowerCase() === columnName
-            )
-          ) {
-            return {
-              from: word?.from ?? cursorPos,
-              options: [
-                {
-                  label: "=",
-                  type: "operator",
-                  apply: "= ",
-                  detail: "Equal to",
-                },
-                {
-                  label: "!=",
-                  type: "operator",
-                  apply: "!= ",
-                  detail: "Not equal to",
-                },
-                {
-                  label: ">",
-                  type: "operator",
-                  apply: "> ",
-                  detail: "Greater than",
-                },
-                {
-                  label: "<",
-                  type: "operator",
-                  apply: "< ",
-                  detail: "Less than",
-                },
-                {
-                  label: ">=",
-                  type: "operator",
-                  apply: ">= ",
-                  detail: "Greater than or equal to",
-                },
-                {
-                  label: "<=",
-                  type: "operator",
-                  apply: "<= ",
-                  detail: "Less than or equal to",
-                },
-                {
-                  label: "LIKE",
-                  type: "operator",
-                  apply: "LIKE ",
-                  detail: "Pattern matching",
-                },
-                {
-                  label: "BETWEEN",
-                  type: "operator",
-                  apply: "BETWEEN ",
-                  detail: "Range filter",
-                },
-                {
-                  label: "IS NULL",
-                  type: "operator",
-                  apply: "IS NULL ",
-                  detail: "Check for null values",
-                },
-                {
-                  label: "IS NOT NULL",
-                  type: "operator",
-                  apply: "IS NOT NULL ",
-                  detail: "Check for non-null values",
-                },
-              ],
-            };
-          }
-        }
-      }
-
-      // 15. After WHERE column operator, suggest values
-      const valuePattern = new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s+(?:.*?\\s+(?:and|or)\\s+)?(\\w+)\\s*(=|\\!=|>|<|>=|<=|LIKE|BETWEEN)\\s*(?:('[^']*'|[^' ]\\w*)?)?$`,
-        "i"
-      );
-      if (valuePattern.test(docText)) {
-        const match = docText.match(valuePattern);
-        if (match) {
-          const tableName = match[1].toLowerCase();
-          const column = match[3];
-          const operator = match[4];
-          const value1 = match[5];
-          if (tables[tableName]) {
-            const columnDef = tables[tableName].columns.find(
-              (col) => col.name.toLowerCase() === column?.toLowerCase()
-            );
-            if (
-              columnDef &&
-              (column as keyof PowerRanger) in tables[tableName].data[0]
-            ) {
-              const columnType = columnDef.type;
-
-              if (operator.toUpperCase() === "BETWEEN") {
-                const sampleValues = getUniqueValues(
-                  column as keyof PowerRanger,
-                  columnType,
-                  tables[tableName]
-                );
-                return {
-                  from: word?.from ?? cursorPos,
-                  options: sampleValues.map((value) => ({
-                    label: value,
-                    type: "value",
-                    apply: value + (value1 ? "" : " AND "),
-                    detail: value1
-                      ? "Second value for BETWEEN"
-                      : "First value for BETWEEN",
-                  })),
-                };
-              }
-
-              if (operator.toUpperCase() === "LIKE") {
-                const likePatterns = getLikePatternSuggestions(
-                  tables[tableName],
-                  column as keyof PowerRanger
-                );
-                return {
-                  from: word?.from ?? cursorPos,
-                  options: likePatterns.map((pattern) => ({
-                    label: pattern,
-                    type: "value",
-                    apply: pattern,
-                    detail: "LIKE pattern",
-                  })),
-                };
-              }
-
-              if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
-                return null;
-              }
-
-              const sampleValues = getUniqueValues(
-                column as keyof PowerRanger,
-                columnType,
-                tables[tableName]
-              );
-              return {
-                from: word?.from ?? cursorPos,
-                options: sampleValues.map((value) => ({
-                  label: value,
-                  type: "value",
-                  apply: value,
-                  detail: "Value",
-                })),
-              };
-            }
-          }
-        }
-      }
-
-      // 16. After AND or OR, suggest remaining columns
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s+.*?\\s+(and|or)\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+where\s+(.+?)\s+(?:and|or)\s*$/i
-        );
-        if (match) {
-          const tableName = match[1].toLowerCase();
-          const alias = match[2]?.toLowerCase() || tableName;
-          const whereClause = match[3] || "";
-          if (tables[tableName]) {
-            const usedColumns = getUsedColumnsInWhere(
-              whereClause,
-              tables[tableName]
-            );
-            return {
-              from: word?.from ?? cursorPos,
-              options: getColumnOptions(usedColumns, tables[tableName], alias),
-            };
-          }
-        }
-      }
-
-      // 17. Suggest number after LIMIT
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+\\w+)?\\s+(?:where\\s+.*?\\s+)?(?:group\\s+by\\s+.*?\\s+)?(?:order\\s+by\\s+.*?\\s+)?limit\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "10",
-            "11",
-            "12",
-            "13",
-            "14",
-            "15",
-            "16",
-            "17",
-            "18",
-            "19",
-            "20",
-          ].map((num) => ({
-            label: num,
-            type: "value",
-            apply: num,
-            detail: `Limit to ${num} ${num === "1" ? "row" : "rows"}`,
-            boost: -Number(num),
-          })),
-        };
-      }
-
-      // 18. After ROUND(column, suggest decimal places)
-      if (/^select\s+round\s*\(\w+,\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: ["0", "1", "2", "3", "4"].map((num) => ({
-            label: num,
-            type: "value",
-            apply: `${num})`,
-            detail: `Round to ${num} decimal place${num === "1" ? "" : "s"}`,
-          })),
-        };
-      }
-
-      // 19. After ORDER BY, suggest columns
-      if (/order\s+by\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: getColumnOptions([], table),
-        };
-      }
-
-      // 20. After ORDER BY column, suggest ASC, DESC, or LIMIT
-      if (/order\s+by\s+\w+\s*$/i.test(docText)) {
-        const orderByColumn = docText.match(/order\s+by\s+(\w+)\s*$/i)?.[1];
-        if (
-          orderByColumn &&
-          table.columns.some(
-            (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
-          )
-        ) {
+    // 9. After FROM table_name, suggest INNER JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
+    if (
+      new RegExp(`from\\s+(\\w+)(?:\\s+\\w+)?\\s*$`, "i").test(docText) &&
+      !/inner\s+join\s*$/i.test(docText)
+    ) {
+      const tableNameMatch = docText.match(/from\s+(\w+)(?:\s+\w+)?\s*$/i);
+      if (tableNameMatch) {
+        const tableName = tableNameMatch[1].toLowerCase();
+        if (tables[tableName]) {
           return {
             from: word?.from ?? cursorPos,
             options: [
               {
-                label: "ASC",
+                label: "INNER JOIN",
                 type: "keyword",
-                apply: " ASC ",
-                detail: "Sort in ascending order",
+                apply: "INNER JOIN ",
+                detail: "Join with another table, returning matching rows",
               },
               {
-                label: "DESC",
+                label: "WHERE",
                 type: "keyword",
-                apply: " DESC ",
-                detail: "Sort in descending order",
+                apply: "WHERE ",
+                detail: "Filter rows",
+              },
+              {
+                label: "GROUP BY",
+                type: "keyword",
+                apply: "GROUP BY ",
+                detail: "Group results by columns",
+              },
+              {
+                label: "ORDER BY",
+                type: "keyword",
+                apply: "ORDER BY ",
+                detail: "Sort results",
               },
               {
                 label: "LIMIT",
                 type: "keyword",
-                apply: " LIMIT ",
+                apply: "LIMIT ",
                 detail: "Limit number of rows",
               },
             ],
           };
         }
       }
+    }
 
-      // 21. After GROUP BY columns, suggest HAVING, ORDER BY, or LIMIT
-      if (
-        /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
-      ) {
-        const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
-        const usedFields = groupByMatch
-          ? groupByMatch[1]
-              .split(",")
-              .map((f) => f.trim())
-              .filter((f) => f)
-          : [];
-        const availableColumns = table.columns.filter(
-          (col) => !usedFields.includes(col.name.toLowerCase())
-        );
-        const availableSelectFields = selectFields.filter(
-          ({ index }) => !usedFields.includes(`${index}`)
-        );
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: ",",
-              type: "operator",
-              apply: ", ",
-              detail: "Add another column",
-            },
-            {
-              label: "HAVING",
-              type: "keyword",
-              apply: " HAVING ",
-              detail: "Filter groups based on aggregate conditions",
-            },
-            {
-              label: "ORDER BY",
-              type: "keyword",
-              apply: " ORDER BY ",
-              detail: "Sort results",
-            },
-            {
-              label: "LIMIT",
-              type: "keyword",
-              apply: " LIMIT ",
-              detail: "Limit number of rows",
-            },
-            ...availableColumns.map((col) => ({
-              label: col.name,
-              type: "field",
-              apply: col.name,
-              detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
-            })),
-            ...availableSelectFields.map(({ field, index }) => ({
-              label: `${index}`,
-              type: "value",
-              apply: `${index}`,
-              detail: `Reference to ${field}`,
-            })),
-          ],
-        };
+    // 10. After GROUP BY, suggest columns or numeric references
+    if (/group\s+by\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          ...getColumnOptions(alreadySelectedFields, table),
+          ...selectFields.map(({ field, index }) => ({
+            label: `${index}`,
+            type: "value",
+            apply: `${index}`,
+            detail: `Reference to ${field}`,
+          })),
+        ],
+      };
+    }
+
+    // 11. After GROUP BY column or number, suggest comma, remaining columns/numbers, HAVING, ORDER BY, or LIMIT
+    if (
+      /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
+    ) {
+      const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
+      const usedFields = groupByMatch
+        ? groupByMatch[1]
+            .split(",")
+            .map((f) => f.trim())
+            .filter((f) => f)
+        : [];
+      const availableColumns = table.columns.filter(
+        (col) => !usedFields.includes(col.name.toLowerCase())
+      );
+      const availableSelectFields = selectFields.filter(
+        ({ index }) => !usedFields.includes(`${index}`)
+      );
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: ",",
+            type: "operator",
+            apply: ", ",
+            detail: "Add another column",
+          },
+          {
+            label: "HAVING",
+            type: "keyword",
+            apply: " HAVING ",
+            detail: "Filter groups based on aggregate conditions",
+          },
+          {
+            label: "ORDER BY",
+            type: "keyword",
+            apply: " ORDER BY ",
+            detail: "Sort results",
+          },
+          {
+            label: "LIMIT",
+            type: "keyword",
+            apply: " LIMIT ",
+            detail: "Limit number of rows",
+          },
+          ...availableColumns.map((col) => ({
+            label: col.name,
+            type: "field",
+            apply: col.name,
+            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+          })),
+          ...availableSelectFields.map(({ field, index }) => ({
+            label: `${index}`,
+            type: "value",
+            apply: `${index}`,
+            detail: `Reference to ${field}`,
+          })),
+        ],
+      };
+    }
+
+    // 12. After WHERE, suggest columns
+    if (
+      new RegExp(`from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s*$`, "i").test(
+        docText
+      )
+    ) {
+      const tableNameMatch = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+where\s*$/i
+      );
+      if (tableNameMatch) {
+        const tableName = tableNameMatch[1].toLowerCase();
+        const alias = tableNameMatch[2]?.toLowerCase() || tableName;
+        if (tables[tableName]) {
+          return {
+            from: word?.from ?? cursorPos,
+            options: getColumnOptions([], tables[tableName], alias),
+          };
+        }
       }
+    }
 
-      // 22. After HAVING, suggest aggregate functions
-      if (/having\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: getAggregateOptions(table),
-        };
-      }
+    // 13. After a complete WHERE condition, suggest AND, OR, GROUP BY, ORDER BY, or LIMIT
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+\\w+)?\\s+where\\s+.*?(?:\\w+\\s*(=|\\!=|>|<|>=|<=|LIKE)\\s*('[^']*'|[^' ]\\w*)|\\w+\\s*BETWEEN\\s*('[^']*'|[^' ]\\w*)\\s*AND\\s*('[^']*'|[^' ]\\w*)|\\w+\\s*(IS NULL|IS NOT NULL))\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: "AND",
+            type: "keyword",
+            apply: " AND ",
+            detail: "Combine with another condition (all must be true)",
+          },
+          {
+            label: "OR",
+            type: "keyword",
+            apply: " OR ",
+            detail: "Combine with another condition (any can be true)",
+          },
+          {
+            label: "GROUP BY",
+            type: "keyword",
+            apply: " GROUP BY ",
+            detail: "Group results by columns",
+          },
+          {
+            label: "ORDER BY",
+            type: "keyword",
+            apply: " ORDER BY ",
+            detail: "Sort results",
+          },
+          {
+            label: "LIMIT",
+            type: "keyword",
+            apply: " LIMIT ",
+            detail: "Limit number of rows",
+          },
+        ],
+      };
+    }
 
-      // 23. After HAVING aggregate, suggest operators
-      if (
-        /having\s*(count|sum|max|min|avg)\s*\((?:[*]|\w+)\)\s*$/i.test(docText)
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
-            {
-              label: "!=",
-              type: "operator",
-              apply: "!= ",
-              detail: "Not equal to",
-            },
-            {
-              label: ">",
-              type: "operator",
-              apply: "> ",
-              detail: "Greater than",
-            },
-            { label: "<", type: "operator", apply: "< ", detail: "Less than" },
-            {
-              label: ">=",
-              type: "operator",
-              apply: ">= ",
-              detail: "Greater than or equal to",
-            },
-            {
-              label: "<=",
-              type: "operator",
-              apply: "<= ",
-              detail: "Less than or equal to",
-            },
-          ],
-        };
-      }
-
-      // 24. After HAVING aggregate operator, suggest numeric values
-      if (
-        /having\s*(count|sum|max|min|avg)\s*\((?:[*]|\w+)\)\s*(=|\!=|>|<|>=|<=)\s*$/i.test(
-          docText
-        )
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: ["0", "1", "2", "3", "4", "5", "10", "15", "20"].map(
-            (num) => ({
-              label: num,
-              type: "value",
-              apply: num,
-              detail: `Value ${num}`,
-            })
-          ),
-        };
-      }
-
-      // 25. After CASE, suggest WHEN
-      if (/^select\s+.*?\bcase\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "WHEN",
-              type: "keyword",
-              apply: "WHEN ",
-              detail: "Start a condition",
-            },
-          ],
-        };
-      }
-
-      // 26. After CASE WHEN, suggest columns
-      if (/^select\s+.*?\bcase\s+when\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: getColumnOptions([], table),
-        };
-      }
-
-      // 27. After CASE WHEN column, suggest operators
-      if (
-        /^select\s+.*?\bcase\s+when\s+\w+\s*$/i.test(docText) &&
-        table.columns.some((col) =>
-          new RegExp(`when\\s+${col.name.toLowerCase()}\\s*$`, "i").test(
-            docText
+    // 14. After WHERE column, suggest operators
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s+.*?\\b(\\w+)\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+where\s+.*?\\b(\w+)\s*$/i
+      );
+      if (match) {
+        const tableName = match[1].toLowerCase();
+        const columnName = match[3].toLowerCase();
+        if (
+          tables[tableName]?.columns.some(
+            (col) => col.name.toLowerCase() === columnName
           )
-        )
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
-            {
-              label: "!=",
-              type: "operator",
-              apply: "!= ",
-              detail: "Not equal to",
-            },
-            {
-              label: ">",
-              type: "operator",
-              apply: "> ",
-              detail: "Greater than",
-            },
-            { label: "<", type: "operator", apply: "< ", detail: "Less than" },
-            {
-              label: ">=",
-              type: "operator",
-              apply: ">= ",
-              detail: "Greater than or equal to",
-            },
-            {
-              label: "<=",
-              type: "operator",
-              apply: "<= ",
-              detail: "Less than or equal to",
-            },
-            {
-              label: "LIKE",
-              type: "operator",
-              apply: "LIKE ",
-              detail: "Pattern matching",
-            },
-            {
-              label: "BETWEEN",
-              type: "operator",
-              apply: "BETWEEN ",
-              detail: "Range filter",
-            },
-            {
-              label: "IS NULL",
-              type: "operator",
-              apply: "IS NULL ",
-              detail: "Check for null values",
-            },
-            {
-              label: "IS NOT NULL",
-              type: "operator",
-              apply: "IS NOT NULL ",
-              detail: "Check for non-null values",
-            },
-          ],
-        };
+        ) {
+          return {
+            from: word?.from ?? cursorPos,
+            options: [
+              {
+                label: "=",
+                type: "operator",
+                apply: "= ",
+                detail: "Equal to",
+              },
+              {
+                label: "!=",
+                type: "operator",
+                apply: "!= ",
+                detail: "Not equal to",
+              },
+              {
+                label: ">",
+                type: "operator",
+                apply: "> ",
+                detail: "Greater than",
+              },
+              {
+                label: "<",
+                type: "operator",
+                apply: "< ",
+                detail: "Less than",
+              },
+              {
+                label: ">=",
+                type: "operator",
+                apply: ">= ",
+                detail: "Greater than or equal to",
+              },
+              {
+                label: "<=",
+                type: "operator",
+                apply: "<= ",
+                detail: "Less than or equal to",
+              },
+              {
+                label: "LIKE",
+                type: "operator",
+                apply: "LIKE ",
+                detail: "Pattern matching",
+              },
+              {
+                label: "BETWEEN",
+                type: "operator",
+                apply: "BETWEEN ",
+                detail: "Range filter",
+              },
+              {
+                label: "IS NULL",
+                type: "operator",
+                apply: "IS NULL ",
+                detail: "Check for null values",
+              },
+              {
+                label: "IS NOT NULL",
+                type: "operator",
+                apply: "IS NOT NULL ",
+                detail: "Check for non-null values",
+              },
+            ],
+          };
+        }
       }
+    }
 
-      // 28. After CASE WHEN column operator, suggest values
-      const caseValuePattern =
-        /^select\s+.*?\bcase\s+when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
-      if (caseValuePattern.test(docText)) {
-        const match = docText.match(caseValuePattern);
-        if (match) {
-          const column = match[1];
-          const operator = match[2];
-          const value1 = match[3];
-          const columnDef = table.columns.find(
+    // 15. After WHERE column operator, suggest values
+    const valuePattern = new RegExp(
+      `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s+(?:.*?\\s+(?:and|or)\\s+)?(\\w+)\\s*(=|\\!=|>|<|>=|<=|LIKE|BETWEEN)\\s*(?:('[^']*'|[^' ]\\w*)?)?$`,
+      "i"
+    );
+    if (valuePattern.test(docText)) {
+      const match = docText.match(valuePattern);
+      if (match) {
+        const tableName = match[1].toLowerCase();
+        const column = match[3];
+        const operator = match[4];
+        const value1 = match[5];
+        if (tables[tableName]) {
+          const columnDef = tables[tableName].columns.find(
             (col) => col.name.toLowerCase() === column?.toLowerCase()
           );
-          if (columnDef && (column as keyof PowerRanger) in table.data[0]) {
+          if (
+            columnDef &&
+            (column as keyof PowerRanger) in tables[tableName].data[0]
+          ) {
             const columnType = columnDef.type;
 
             if (operator.toUpperCase() === "BETWEEN") {
               const sampleValues = getUniqueValues(
                 column as keyof PowerRanger,
                 columnType,
-                table
+                tables[tableName]
               );
               return {
                 from: word?.from ?? cursorPos,
@@ -3842,7 +3435,7 @@ export default function SqlEditor() {
 
             if (operator.toUpperCase() === "LIKE") {
               const likePatterns = getLikePatternSuggestions(
-                table,
+                tables[tableName],
                 column as keyof PowerRanger
               );
               return {
@@ -3857,19 +3450,380 @@ export default function SqlEditor() {
             }
 
             if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
-              return {
-                from: word?.from ?? cursorPos,
-                options: [
-                  {
-                    label: "THEN",
-                    type: "keyword",
-                    apply: " THEN ",
-                    detail: "Specify output for condition",
-                  },
-                ],
-              };
+              return null;
             }
 
+            const sampleValues = getUniqueValues(
+              column as keyof PowerRanger,
+              columnType,
+              tables[tableName]
+            );
+            return {
+              from: word?.from ?? cursorPos,
+              options: sampleValues.map((value) => ({
+                label: value,
+                type: "value",
+                apply: value,
+                detail: "Value",
+              })),
+            };
+          }
+        }
+      }
+    }
+
+    // 16. After AND or OR, suggest remaining columns
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+where\\s+.*?\\s+(and|or)\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+where\s+(.+?)\s+(?:and|or)\s*$/i
+      );
+      if (match) {
+        const tableName = match[1].toLowerCase();
+        const alias = match[2]?.toLowerCase() || tableName;
+        const whereClause = match[3] || "";
+        if (tables[tableName]) {
+          const usedColumns = getUsedColumnsInWhere(
+            whereClause,
+            tables[tableName]
+          );
+          return {
+            from: word?.from ?? cursorPos,
+            options: getColumnOptions(usedColumns, tables[tableName], alias),
+          };
+        }
+      }
+    }
+
+    // 17. Suggest number after LIMIT
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+\\w+)?\\s+(?:where\\s+.*?\\s+)?(?:group\\s+by\\s+.*?\\s+)?(?:order\\s+by\\s+.*?\\s+)?limit\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+        ].map((num) => ({
+          label: num,
+          type: "value",
+          apply: num,
+          detail: `Limit to ${num} ${num === "1" ? "row" : "rows"}`,
+          boost: -Number(num),
+        })),
+      };
+    }
+
+    // 18. After ROUND(column, suggest decimal places)
+    if (/^select\s+round\s*\(\w+,\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: ["0", "1", "2", "3", "4"].map((num) => ({
+          label: num,
+          type: "value",
+          apply: `${num})`,
+          detail: `Round to ${num} decimal place${num === "1" ? "" : "s"}`,
+        })),
+      };
+    }
+
+    // 19. After ORDER BY, suggest columns
+    if (/order\s+by\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: getColumnOptions([], table),
+      };
+    }
+
+    // 20. After ORDER BY column, suggest ASC, DESC, or LIMIT
+    if (/order\s+by\s+\w+\s*$/i.test(docText)) {
+      const orderByColumn = docText.match(/order\s+by\s+(\w+)\s*$/i)?.[1];
+      if (
+        orderByColumn &&
+        table.columns.some(
+          (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
+        )
+      ) {
+        return {
+          from: word?.from ?? cursorPos,
+          options: [
+            {
+              label: "ASC",
+              type: "keyword",
+              apply: " ASC ",
+              detail: "Sort in ascending order",
+            },
+            {
+              label: "DESC",
+              type: "keyword",
+              apply: " DESC ",
+              detail: "Sort in descending order",
+            },
+            {
+              label: "LIMIT",
+              type: "keyword",
+              apply: " LIMIT ",
+              detail: "Limit number of rows",
+            },
+          ],
+        };
+      }
+    }
+
+    // 21. After GROUP BY columns, suggest HAVING, ORDER BY, or LIMIT
+    if (
+      /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
+    ) {
+      const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
+      const usedFields = groupByMatch
+        ? groupByMatch[1]
+            .split(",")
+            .map((f) => f.trim())
+            .filter((f) => f)
+        : [];
+      const availableColumns = table.columns.filter(
+        (col) => !usedFields.includes(col.name.toLowerCase())
+      );
+      const availableSelectFields = selectFields.filter(
+        ({ index }) => !usedFields.includes(`${index}`)
+      );
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: ",",
+            type: "operator",
+            apply: ", ",
+            detail: "Add another column",
+          },
+          {
+            label: "HAVING",
+            type: "keyword",
+            apply: " HAVING ",
+            detail: "Filter groups based on aggregate conditions",
+          },
+          {
+            label: "ORDER BY",
+            type: "keyword",
+            apply: " ORDER BY ",
+            detail: "Sort results",
+          },
+          {
+            label: "LIMIT",
+            type: "keyword",
+            apply: " LIMIT ",
+            detail: "Limit number of rows",
+          },
+          ...availableColumns.map((col) => ({
+            label: col.name,
+            type: "field",
+            apply: col.name,
+            detail: `${col.type}, ${col.notNull ? "not null" : "nullable"}`,
+          })),
+          ...availableSelectFields.map(({ field, index }) => ({
+            label: `${index}`,
+            type: "value",
+            apply: `${index}`,
+            detail: `Reference to ${field}`,
+          })),
+        ],
+      };
+    }
+
+    // 22. After HAVING, suggest aggregate functions
+    if (/having\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: getAggregateOptions(table),
+      };
+    }
+
+    // 23. After HAVING aggregate, suggest operators
+    if (
+      /having\s*(count|sum|max|min|avg)\s*\((?:[*]|\w+)\)\s*$/i.test(docText)
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
+          {
+            label: "!=",
+            type: "operator",
+            apply: "!= ",
+            detail: "Not equal to",
+          },
+          {
+            label: ">",
+            type: "operator",
+            apply: "> ",
+            detail: "Greater than",
+          },
+          { label: "<", type: "operator", apply: "< ", detail: "Less than" },
+          {
+            label: ">=",
+            type: "operator",
+            apply: ">= ",
+            detail: "Greater than or equal to",
+          },
+          {
+            label: "<=",
+            type: "operator",
+            apply: "<= ",
+            detail: "Less than or equal to",
+          },
+        ],
+      };
+    }
+
+    // 24. After HAVING aggregate operator, suggest numeric values
+    if (
+      /having\s*(count|sum|max|min|avg)\s*\((?:[*]|\w+)\)\s*(=|\!=|>|<|>=|<=)\s*$/i.test(
+        docText
+      )
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: ["0", "1", "2", "3", "4", "5", "10", "15", "20"].map(
+          (num) => ({
+            label: num,
+            type: "value",
+            apply: num,
+            detail: `Value ${num}`,
+          })
+        ),
+      };
+    }
+
+    // 25. After CASE, suggest WHEN
+    if (/^select\s+.*?\bcase\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: "WHEN",
+            type: "keyword",
+            apply: "WHEN ",
+            detail: "Start a condition",
+          },
+        ],
+      };
+    }
+
+    // 26. After CASE WHEN, suggest columns
+    if (/^select\s+.*?\bcase\s+when\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: getColumnOptions([], table),
+      };
+    }
+
+    // 27. After CASE WHEN column, suggest operators
+    if (
+      /^select\s+.*?\bcase\s+when\s+\w+\s*$/i.test(docText) &&
+      table.columns.some((col) =>
+        new RegExp(`when\\s+${col.name.toLowerCase()}\\s*$`, "i").test(
+          docText
+        )
+      )
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          { label: "=", type: "operator", apply: "= ", detail: "Equal to" },
+          {
+            label: "!=",
+            type: "operator",
+            apply: "!= ",
+            detail: "Not equal to",
+          },
+          {
+            label: ">",
+            type: "operator",
+            apply: "> ",
+            detail: "Greater than",
+          },
+          { label: "<", type: "operator", apply: "< ", detail: "Less than" },
+          {
+            label: ">=",
+            type: "operator",
+            apply: ">= ",
+            detail: "Greater than or equal to",
+          },
+          {
+            label: "<=",
+            type: "operator",
+            apply: "<= ",
+            detail: "Less than or equal to",
+          },
+          {
+            label: "LIKE",
+            type: "operator",
+            apply: "LIKE ",
+            detail: "Pattern matching",
+          },
+          {
+            label: "BETWEEN",
+            type: "operator",
+            apply: "BETWEEN ",
+            detail: "Range filter",
+          },
+          {
+            label: "IS NULL",
+            type: "operator",
+            apply: "IS NULL ",
+            detail: "Check for null values",
+          },
+          {
+            label: "IS NOT NULL",
+            type: "operator",
+            apply: "IS NOT NULL ",
+            detail: "Check for non-null values",
+          },
+        ],
+      };
+    }
+
+    // 28. After CASE WHEN column operator, suggest values
+    const caseValuePattern =
+      /^select\s+.*?\bcase\s+when\s+(\w+)\s*(=|\!=|>|<|>=|<=|LIKE|BETWEEN)\s*(?:('[^']*'|[^' ]\w*)?)?$/i;
+    if (caseValuePattern.test(docText)) {
+      const match = docText.match(caseValuePattern);
+      if (match) {
+        const column = match[1];
+        const operator = match[2];
+        const value1 = match[3];
+        const columnDef = table.columns.find(
+          (col) => col.name.toLowerCase() === column?.toLowerCase()
+        );
+        if (columnDef && (column as keyof PowerRanger) in table.data[0]) {
+          const columnType = columnDef.type;
+
+          if (operator.toUpperCase() === "BETWEEN") {
             const sampleValues = getUniqueValues(
               column as keyof PowerRanger,
               columnType,
@@ -3880,414 +3834,463 @@ export default function SqlEditor() {
               options: sampleValues.map((value) => ({
                 label: value,
                 type: "value",
-                apply: value + " ",
-                detail: "Value",
+                apply: value + (value1 ? "" : " AND "),
+                detail: value1
+                  ? "Second value for BETWEEN"
+                  : "First value for BETWEEN",
               })),
             };
           }
-        }
-      }
 
-      // 29. After CASE WHEN column operator value, suggest THEN
-      if (
-        /^select\s+.*?\bcase\s+when\s+\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)\s*$/i.test(
-          docText
-        ) ||
-        /^select\s+.*?\bcase\s+when\s+\w+\s*between\s*('[^']*'|[^' ]\w*)\s*and\s*('[^']*'|[^' ]\w*)\s*$/i.test(
-          docText
-        )
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "THEN",
-              type: "keyword",
-              apply: " THEN ",
-              detail: "Specify output for condition",
-            },
-          ],
-        };
-      }
-
-      // 30. After THEN, suggest values or columns
-      if (/^select\s+.*?\bcase\s+when\s+.*?\s+then\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            ...getColumnOptions([], table),
-            ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
-              label: val,
-              type: "value",
-              apply: val + " ",
-              detail: "Output value",
-            })),
-          ],
-        };
-      }
-
-      // 31. After THEN value or ELSE value, suggest WHEN, ELSE, or END
-      if (
-        /^select\s+.*?\bcase\s+when\s+.*?\s+then\s*('[^']*'|[^' ]\w*)\s*$/i.test(
-          docText
-        ) ||
-        /^select\s+.*?\bcase\s+when\s+.*?\s+else\s*('[^']*'|[^' ]\w*)\s*$/i.test(
-          docText
-        )
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "WHEN",
-              type: "keyword",
-              apply: " WHEN ",
-              detail: "Add another condition",
-            },
-            {
-              label: "ELSE",
-              type: "keyword",
-              apply: " ELSE ",
-              detail: "Specify default output",
-            },
-            {
-              label: "END",
-              type: "keyword",
-              apply: " END ",
-              detail: "Close CASE statement",
-            },
-          ],
-        };
-      }
-
-      // 32. After ELSE, suggest values or columns
-      if (/^select\s+.*?\bcase\s+when\s+.*?\s+else\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            ...getColumnOptions([], table),
-            ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
-              label: val,
-              type: "value",
-              apply: val + " ",
-              detail: "Default output value",
-            })),
-          ],
-        };
-      }
-
-      // 33. After END, suggest AS, comma, or FROM
-      if (/^select\s+.*?\bcase\s+when\s+.*?\s+end\s*$/i.test(docText)) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: "AS",
-              type: "keyword",
-              apply: " AS 'Output' ",
-              detail: "Alias the CASE statement",
-            },
-            {
-              label: ",",
-              type: "operator",
-              apply: ", ",
-              detail: "Add another field",
-            },
-            {
-              label: "FROM",
-              type: "keyword",
-              apply: " FROM ",
-              detail: "Specify table",
-            },
-          ],
-        };
-      }
-
-      // 34. After END AS 'alias', suggest comma or FROM
-      if (
-        /^select\s+.*?\bcase\s+when\s+.*?\s+end\s+as\s+'.*?'\s*$/i.test(docText)
-      ) {
-        return {
-          from: word?.from ?? cursorPos,
-          options: [
-            {
-              label: ",",
-              type: "operator",
-              apply: ", ",
-              detail: "Add another field",
-            },
-            {
-              label: "FROM",
-              type: "keyword",
-              apply: " FROM ",
-              detail: "Specify table",
-            },
-          ],
-        };
-      }
-
-      // 36. After INNER JOIN, suggest other table names, filtering by partial input
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+\\w+)?\\s+inner\\s+join\\s*(\\w*)$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+\w+)?\s+inner\s+join\s*(\w*)$/i
-        );
-        if (match) {
-          const firstTable = match[1].toLowerCase();
-          const partialTable = match[2].toLowerCase();
-          if (tables[firstTable]) {
-            const usedTables = docText
-              .match(/from\s+(\w+)|inner\s+join\s+(\w+)/gi)
-              ?.map((t) => {
-                const matchResult = t.match(/\w+$/);
-                return matchResult ? matchResult[0].toLowerCase() : "";
-              })
-              .filter((t) => t) || [firstTable];
-            const filteredTables = Object.keys(tables)
-              .filter(
-                (tableName) => !usedTables.includes(tableName.toLowerCase())
-              )
-              .filter((tableName) =>
-                tableName.toLowerCase().startsWith(partialTable)
-              );
+          if (operator.toUpperCase() === "LIKE") {
+            const likePatterns = getLikePatternSuggestions(
+              table,
+              column as keyof PowerRanger
+            );
             return {
               from: word?.from ?? cursorPos,
-              options: filteredTables.map((tableName) => ({
-                label: tableName,
-                type: "table",
-                apply: tableName + " ",
-                detail: "Table name",
+              options: likePatterns.map((pattern) => ({
+                label: pattern,
+                type: "value",
+                apply: pattern,
+                detail: "LIKE pattern",
               })),
             };
           }
-        }
-      }
 
-      // 37. After INNER JOIN table_name, suggest ON
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s*$`,
-          "i"
-        ).test(docText) &&
-        !/on\s*$/i.test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s*$/i
-        );
-        if (match) {
-          const firstTable = match[1].toLowerCase();
-          const secondTable = match[3].toLowerCase();
-          if (tables[firstTable] && tables[secondTable]) {
+          if (["IS NULL", "IS NOT NULL"].includes(operator.toUpperCase())) {
             return {
               from: word?.from ?? cursorPos,
               options: [
                 {
-                  label: "ON",
+                  label: "THEN",
                   type: "keyword",
-                  apply: "ON ",
-                  detail: "Specify join condition",
+                  apply: " THEN ",
+                  detail: "Specify output for condition",
                 },
               ],
             };
           }
+
+          const sampleValues = getUniqueValues(
+            column as keyof PowerRanger,
+            columnType,
+            table
+          );
+          return {
+            from: word?.from ?? cursorPos,
+            options: sampleValues.map((value) => ({
+              label: value,
+              type: "value",
+              apply: value + " ",
+              detail: "Value",
+            })),
+          };
         }
       }
+    }
 
-      // 38. After ON, suggest columns from both tables
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s*$/i
-        );
-        if (match) {
-          const firstTable = match[1].toLowerCase();
-          const firstAlias = match[2]?.toLowerCase() || firstTable;
-          const secondTable = match[3].toLowerCase();
-          const secondAlias = match[4]?.toLowerCase() || secondTable;
-          if (tables[firstTable] && tables[secondTable]) {
-            const firstTableColumns = getColumnOptions(
-              [],
-              tables[firstTable],
-              firstAlias
-            );
-            const secondTableColumns = getColumnOptions(
-              [],
-              tables[secondTable],
-              secondAlias
-            );
-            return {
-              from: word?.from ?? cursorPos,
-              options: [...firstTableColumns, ...secondTableColumns],
-            };
-          }
-        }
-      }
+    // 29. After CASE WHEN column operator value, suggest THEN
+    if (
+      /^select\s+.*?\bcase\s+when\s+\w+\s*(=|\!=|>|<|>=|<=|LIKE)\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+        docText
+      ) ||
+      /^select\s+.*?\bcase\s+when\s+\w+\s*between\s*('[^']*'|[^' ]\w*)\s*and\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+        docText
+      )
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: "THEN",
+            type: "keyword",
+            apply: " THEN ",
+            detail: "Specify output for condition",
+          },
+        ],
+      };
+    }
 
-      // 39. After ON table1.column, suggest operators
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*$/i
-        );
-        if (match) {
-          const firstTable = match[1].toLowerCase();
-          const firstAlias = match[2]?.toLowerCase() || firstTable;
-          const secondTable = match[3].toLowerCase();
-          const columnName = match[6].toLowerCase();
-          const tableOrAlias = match[5].toLowerCase();
-          const targetTable =
-            tableOrAlias === firstTable || tableOrAlias === firstAlias
-              ? firstTable
-              : secondTable;
-          if (
-            tables[firstTable] &&
-            tables[secondTable] &&
-            tables[targetTable].columns.some(
-              (col) => col.name.toLowerCase() === columnName
+    // 30. After THEN, suggest values or columns
+    if (/^select\s+.*?\bcase\s+when\s+.*?\s+then\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          ...getColumnOptions([], table),
+          ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
+            label: val,
+            type: "value",
+            apply: val + " ",
+            detail: "Output value",
+          })),
+        ],
+      };
+    }
+
+    // 31. After THEN value or ELSE value, suggest WHEN, ELSE, or END
+    if (
+      /^select\s+.*?\bcase\s+when\s+.*?\s+then\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+        docText
+      ) ||
+      /^select\s+.*?\bcase\s+when\s+.*?\s+else\s*('[^']*'|[^' ]\w*)\s*$/i.test(
+        docText
+      )
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: "WHEN",
+            type: "keyword",
+            apply: " WHEN ",
+            detail: "Add another condition",
+          },
+          {
+            label: "ELSE",
+            type: "keyword",
+            apply: " ELSE ",
+            detail: "Specify default output",
+          },
+          {
+            label: "END",
+            type: "keyword",
+            apply: " END ",
+            detail: "Close CASE statement",
+          },
+        ],
+      };
+    }
+
+    // 32. After ELSE, suggest values or columns
+    if (/^select\s+.*?\bcase\s+when\s+.*?\s+else\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          ...getColumnOptions([], table),
+          ...["'value'", "'true'", "'false'", "'output'"].map((val) => ({
+            label: val,
+            type: "value",
+            apply: val + " ",
+            detail: "Default output value",
+          })),
+        ],
+      };
+    }
+
+    // 33. After END, suggest AS, comma, or FROM
+    if (/^select\s+.*?\bcase\s+when\s+.*?\s+end\s*$/i.test(docText)) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: "AS",
+            type: "keyword",
+            apply: " AS 'Output' ",
+            detail: "Alias the CASE statement",
+          },
+          {
+            label: ",",
+            type: "operator",
+            apply: ", ",
+            detail: "Add another field",
+          },
+          {
+            label: "FROM",
+            type: "keyword",
+            apply: " FROM ",
+            detail: "Specify table",
+          },
+        ],
+      };
+    }
+
+    // 34. After END AS 'alias', suggest comma or FROM
+    if (
+      /^select\s+.*?\bcase\s+when\s+.*?\s+end\s+as\s+'.*?'\s*$/i.test(docText)
+    ) {
+      return {
+        from: word?.from ?? cursorPos,
+        options: [
+          {
+            label: ",",
+            type: "operator",
+            apply: ", ",
+            detail: "Add another field",
+          },
+          {
+            label: "FROM",
+            type: "keyword",
+            apply: " FROM ",
+            detail: "Specify table",
+          },
+        ],
+      };
+    }
+
+    // 36. After INNER JOIN, suggest other table names, filtering by partial input
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+\\w+)?\\s+inner\\s+join\\s*(\\w*)$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+\w+)?\s+inner\s+join\s*(\w*)$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const partialTable = match[2].toLowerCase();
+        if (tables[firstTable]) {
+          const usedTables = docText
+            .match(/from\s+(\w+)|inner\s+join\s+(\w+)/gi)
+            ?.map((t) => {
+              const matchResult = t.match(/\w+$/);
+              return matchResult ? matchResult[0].toLowerCase() : "";
+            })
+            .filter((t) => t) || [firstTable];
+          const filteredTables = Object.keys(tables)
+            .filter(
+              (tableName) => !usedTables.includes(tableName.toLowerCase())
             )
-          ) {
-            return {
-              from: word?.from ?? cursorPos,
-              options: [
-                {
-                  label: "=",
-                  type: "operator",
-                  apply: "= ",
-                  detail: "Equal to (for JOIN condition)",
-                },
-                {
-                  label: "!=",
-                  type: "operator",
-                  apply: "!= ",
-                  detail: "Not equal to",
-                },
-                {
-                  label: ">",
-                  type: "operator",
-                  apply: "> ",
-                  detail: "Greater than",
-                },
-                {
-                  label: "<",
-                  type: "operator",
-                  apply: "< ",
-                  detail: "Less than",
-                },
-                {
-                  label: ">=",
-                  type: "operator",
-                  apply: ">= ",
-                  detail: "Greater than or equal to",
-                },
-                {
-                  label: "<=",
-                  type: "operator",
-                  apply: "<= ",
-                  detail: "Less than or equal to",
-                },
-              ],
-            };
-          }
+            .filter((tableName) =>
+              tableName.toLowerCase().startsWith(partialTable)
+            );
+          return {
+            from: word?.from ?? cursorPos,
+            options: filteredTables.map((tableName) => ({
+              label: tableName,
+              type: "table",
+              apply: tableName + " ",
+              detail: "Table name",
+            })),
+          };
         }
       }
+    }
 
-      // 40. After ON table1.column =, suggest columns from the other table
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
-        );
-        if (match) {
-          const firstTable = match[1].toLowerCase();
-          const firstAlias = match[2]?.toLowerCase() || firstTable;
-          const secondTable = match[3].toLowerCase();
-          const secondAlias = match[4]?.toLowerCase() || secondTable;
-          const tableOrAlias = match[5].toLowerCase();
-          const firstTableUsed =
-            tableOrAlias === firstTable || tableOrAlias === firstAlias;
-          if (tables[firstTable] && tables[secondTable]) {
-            const targetTable = firstTableUsed ? secondTable : firstTable;
-            const targetAlias = firstTableUsed ? secondAlias : firstAlias;
-            return {
-              from: word?.from ?? cursorPos,
-              options: getColumnOptions([], tables[targetTable], targetAlias),
-            };
-          }
+    // 37. After INNER JOIN table_name, suggest ON
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s*$`,
+        "i"
+      ).test(docText) &&
+      !/on\s*$/i.test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s*$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const secondTable = match[3].toLowerCase();
+        if (tables[firstTable] && tables[secondTable]) {
+          return {
+            from: word?.from ?? cursorPos,
+            options: [
+              {
+                label: "ON",
+                type: "keyword",
+                apply: "ON ",
+                detail: "Specify join condition",
+              },
+            ],
+          };
         }
       }
+    }
 
-      // 41. After ON table1.column = table2.column, suggest INNER JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
-      if (
-        new RegExp(
-          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s*$`,
-          "i"
-        ).test(docText)
-      ) {
-        const match = docText.match(
-          /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$/i
-        );
-        if (match) {
-          const firstTable = match[1].toLowerCase();
-          const secondTable = match[3].toLowerCase();
-          if (tables[firstTable] && tables[secondTable]) {
-            return {
-              from: word?.from ?? cursorPos,
-              options: [
-                {
-                  label: "INNER JOIN",
-                  type: "keyword",
-                  apply: "INNER JOIN ",
-                  detail: "Join with another table, returning matching rows",
-                },
-                {
-                  label: "WHERE",
-                  type: "keyword",
-                  apply: "WHERE ",
-                  detail: "Filter rows",
-                },
-                {
-                  label: "GROUP BY",
-                  type: "keyword",
-                  apply: "GROUP BY ",
-                  detail: "Group results by columns",
-                },
-                {
-                  label: "ORDER BY",
-                  type: "keyword",
-                  apply: "ORDER BY ",
-                  detail: "Sort results",
-                },
-                {
-                  label: "LIMIT",
-                  type: "keyword",
-                  apply: "LIMIT ",
-                  detail: "Limit number of rows",
-                },
-              ],
-            };
-          }
+    // 38. After ON, suggest columns from both tables
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s*$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const firstAlias = match[2]?.toLowerCase() || firstTable;
+        const secondTable = match[3].toLowerCase();
+        const secondAlias = match[4]?.toLowerCase() || secondTable;
+        if (tables[firstTable] && tables[secondTable]) {
+          const firstTableColumns = getColumnOptions(
+            [],
+            tables[firstTable],
+            firstAlias
+          );
+          const secondTableColumns = getColumnOptions(
+            [],
+            tables[secondTable],
+            secondAlias
+          );
+          return {
+            from: word?.from ?? cursorPos,
+            options: [...firstTableColumns, ...secondTableColumns],
+          };
         }
       }
+    }
 
-      return null;
-    };
+    // 39. After ON table1.column, suggest operators
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const firstAlias = match[2]?.toLowerCase() || firstTable;
+        const secondTable = match[3].toLowerCase();
+        const columnName = match[6].toLowerCase();
+        const tableOrAlias = match[5].toLowerCase();
+        const targetTable =
+          tableOrAlias === firstTable || tableOrAlias === firstAlias
+            ? firstTable
+            : secondTable;
+        if (
+          tables[firstTable] &&
+          tables[secondTable] &&
+          tables[targetTable].columns.some(
+            (col) => col.name.toLowerCase() === columnName
+          )
+        ) {
+          return {
+            from: word?.from ?? cursorPos,
+            options: [
+              {
+                label: "=",
+                type: "operator",
+                apply: "= ",
+                detail: "Equal to (for JOIN condition)",
+              },
+              {
+                label: "!=",
+                type: "operator",
+                apply: "!= ",
+                detail: "Not equal to",
+              },
+              {
+                label: ">",
+                type: "operator",
+                apply: "> ",
+                detail: "Greater than",
+              },
+              {
+                label: "<",
+                type: "operator",
+                apply: "< ",
+                detail: "Less than",
+              },
+              {
+                label: ">=",
+                type: "operator",
+                apply: ">= ",
+                detail: "Greater than or equal to",
+              },
+              {
+                label: "<=",
+                type: "operator",
+                apply: "<= ",
+                detail: "Less than or equal to",
+              },
+            ],
+          };
+        }
+      }
+    }
 
+    // 40. After ON table1.column =, suggest columns from the other table
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const firstAlias = match[2]?.toLowerCase() || firstTable;
+        const secondTable = match[3].toLowerCase();
+        const secondAlias = match[4]?.toLowerCase() || secondTable;
+        const tableOrAlias = match[5].toLowerCase();
+        const firstTableUsed =
+          tableOrAlias === firstTable || tableOrAlias === firstAlias;
+        if (tables[firstTable] && tables[secondTable]) {
+          const targetTable = firstTableUsed ? secondTable : firstTable;
+          const targetAlias = firstTableUsed ? secondAlias : firstAlias;
+          return {
+            from: word?.from ?? cursorPos,
+            options: getColumnOptions([], tables[targetTable], targetAlias),
+          };
+        }
+      }
+    }
+
+    // 41. After ON table1.column = table2.column, suggest INNER JOIN, WHERE, GROUP BY, ORDER BY, or LIMIT
+    if (
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+inner\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s*$`,
+        "i"
+      ).test(docText)
+    ) {
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+inner\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const secondTable = match[3].toLowerCase();
+        if (tables[firstTable] && tables[secondTable]) {
+          return {
+            from: word?.from ?? cursorPos,
+            options: [
+              {
+                label: "INNER JOIN",
+                type: "keyword",
+                apply: "INNER JOIN ",
+                detail: "Join with another table, returning matching rows",
+              },
+              {
+                label: "WHERE",
+                type: "keyword",
+                apply: "WHERE ",
+                detail: "Filter rows",
+              },
+              {
+                label: "GROUP BY",
+                type: "keyword",
+                apply: "GROUP BY ",
+                detail: "Group results by columns",
+              },
+              {
+                label: "ORDER BY",
+                type: "keyword",
+                apply: "ORDER BY ",
+                detail: "Sort results",
+              },
+              {
+                label: "LIMIT",
+                type: "keyword",
+                apply: "LIMIT ",
+                detail: "Limit number of rows",
+              },
+            ],
+          };
+        }
+      }
+    }
+
+    return null;
+  };
+
+  useEffect(() => {
     const state = EditorState.create({
       doc: "",
       extensions: [
