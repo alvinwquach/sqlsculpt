@@ -412,6 +412,43 @@ function Tooltip({ message }: TooltipProps) {
   );
 }
 
+const evaluateCondition = (
+  row: PowerRanger,
+  column: string,
+  operator: string,
+  value: string,
+  table: Table
+): boolean => {
+  // Implementation of evaluateCondition (replace with your actual logic)
+  const columnValue = row[column as keyof PowerRanger];
+  const compareValue = value.replace(/^'|'$/g, "");
+  const columnDef = table.columns.find(
+    (col) => col.name.toLowerCase() === column.toLowerCase()
+  );
+
+  if (!columnDef) return false;
+
+  switch (operator.toUpperCase()) {
+    case "=":
+      return columnValue === compareValue;
+    case "!=":
+      return columnValue !== compareValue;
+    case ">":
+      return Number(columnValue) > Number(compareValue);
+    case "<":
+      return Number(columnValue) < Number(compareValue);
+    case ">=":
+      return Number(columnValue) >= Number(compareValue);
+    case "<=":
+      return Number(columnValue) <= Number(compareValue);
+    case "LIKE":
+      const pattern = compareValue.replace(/%/g, ".*").replace(/_/g, ".");
+      return new RegExp(`^${pattern}$`, "i").test(String(columnValue));
+    default:
+      return false;
+  }
+};
+
 export default function SqlEditor() {
   const editorRef = useRef<EditorView | null>(null);
   const [result, setResult] = useState<string | null>("");
@@ -478,83 +515,6 @@ export default function SqlEditor() {
     }
 
     return false;
-  };
-
-  const evaluateCondition = (
-    row: PowerRanger,
-    column: string,
-    operator: string,
-    value: string,
-    table: PowerRangersData
-  ): boolean => {
-    const columnValue = row[column as keyof PowerRanger];
-    const columnType = table.columns.find(
-      (col: Column) => col.name === column
-    )?.type;
-
-    if (operator.toUpperCase() === "LIKE") {
-      if (columnType === "text" || columnType === "date") {
-        return evaluateLikeCondition(String(columnValue), value);
-      } else if (columnType === "text[]") {
-        const typedColumnValue = columnValue as string[];
-        if (Array.isArray(typedColumnValue)) {
-          return typedColumnValue.some((item) =>
-            evaluateLikeCondition(item, value)
-          );
-        }
-        return false;
-      }
-      return false;
-    }
-
-    const cleanValue = value.replace(/^'|'$/g, "");
-    let typedColumnValue: string | number | string[];
-    let typedValue: string | number;
-
-    if (columnType === "integer" || columnType === "float") {
-      typedColumnValue = Number(columnValue);
-      typedValue = Number(cleanValue);
-      if (isNaN(typedColumnValue) || isNaN(typedValue)) {
-        return false;
-      }
-    } else if (columnType === "date" || columnType === "text") {
-      typedColumnValue = String(columnValue);
-      typedValue = cleanValue;
-    } else if (columnType === "text[]") {
-      typedColumnValue = columnValue as string[];
-      typedValue = cleanValue;
-
-      if (Array.isArray(typedColumnValue)) {
-        switch (operator.toUpperCase()) {
-          case "=":
-            return typedColumnValue.includes(typedValue);
-          case "!=":
-            return !typedColumnValue.includes(typedValue);
-          default:
-            return false;
-        }
-      }
-      return false;
-    } else {
-      return false;
-    }
-
-    switch (operator.toUpperCase()) {
-      case "=":
-        return typedColumnValue === typedValue;
-      case "!=":
-        return typedColumnValue !== typedValue;
-      case ">":
-        return typedColumnValue > typedValue;
-      case "<":
-        return typedColumnValue < typedValue;
-      case ">=":
-        return typedColumnValue >= typedValue;
-      case "<=":
-        return typedColumnValue <= typedValue;
-      default:
-        return false;
-    }
   };
 
   const evaluateNullCondition = (
@@ -2735,7 +2695,7 @@ export default function SqlEditor() {
         return Array.from(values).slice(0, 10);
       },
       []
-    );    
+    );
 
     const getLikePatternSuggestions = useCallback(
       (table: Table, column: keyof PowerRanger): string[] => {
@@ -2797,10 +2757,7 @@ export default function SqlEditor() {
               f
                 .trim()
                 .replace(/\s+as\s+'.*?'$/i, "")
-                .replace(
-                  /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i,
-                  "$1"
-                )
+                .replace(/^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i, "$1")
                 .replace(/^case\s+.*?\s+end$/i, "")
                 .toLowerCase()
             )
@@ -3001,17 +2958,13 @@ export default function SqlEditor() {
           .filter((f) => f);
 
         const lastField = fields[fields.length - 1] || "";
-        const lastFieldClean = lastField
-          .replace(/\s+as\s+'.*?'$/i, "")
-          .trim();
+        const lastFieldClean = lastField.replace(/\s+as\s+'.*?'$/i, "").trim();
         const isAggregate =
           /^(count|sum|max|min|avg|round)\s*\((?:[\w*]+|\*|\([^)]+\))(?:,\s*\d+)?\)$/i.test(
             lastFieldClean
           );
         const isNestedAggregate =
-          /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i.test(
-            lastFieldClean
-          );
+          /^round\s*\(\s*avg\s*\(\w+\)\s*(?:,\s*\d+)?\)$/i.test(lastFieldClean);
         const isColumn =
           lastFieldClean.toLowerCase() === "*" ||
           table.columns.some(
@@ -3181,9 +3134,7 @@ export default function SqlEditor() {
     }
 
     // 11. After GROUP BY column or number, suggest comma, remaining columns/numbers, HAVING, ORDER BY, or LIMIT
-    if (
-      /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
-    ) {
+    if (/group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)) {
       const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
       const usedFields = groupByMatch
         ? groupByMatch[1]
@@ -3596,9 +3547,7 @@ export default function SqlEditor() {
     }
 
     // 21. After GROUP BY columns, suggest HAVING, ORDER BY, or LIMIT
-    if (
-      /group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)
-    ) {
+    if (/group\s+by\s+(?:\w+|\d+)(?:\s*,\s*(?:\w+|\d+))*\s*$/i.test(docText)) {
       const groupByMatch = docText.match(/group\s+by\s+(.+)/i);
       const usedFields = groupByMatch
         ? groupByMatch[1]
@@ -3746,9 +3695,7 @@ export default function SqlEditor() {
     if (
       /^select\s+.*?\bcase\s+when\s+\w+\s*$/i.test(docText) &&
       table.columns.some((col) =>
-        new RegExp(`when\\s+${col.name.toLowerCase()}\\s*$`, "i").test(
-          docText
-        )
+        new RegExp(`when\\s+${col.name.toLowerCase()}\\s*$`, "i").test(docText)
       )
     ) {
       return {
