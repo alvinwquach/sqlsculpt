@@ -1419,7 +1419,6 @@ export default function SqlEditor() {
           return false;
         }
 
-        // Validate column compatibility
         if (firstTable.columns.length !== secondTable.columns.length) {
           setResult("Error: UNION tables must have the same number of columns");
           setTooltip(null);
@@ -1440,7 +1439,6 @@ export default function SqlEditor() {
           }
         }
 
-        // Parse fields
         const firstFields = firstFieldsRaw
           .split(/(?<!\([^()]*),(?![^()]*\))/)
           .map((f) => f.trim())
@@ -1505,7 +1503,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Process first table data
         let firstData = firstTable.data;
         if (firstWhereClause) {
           const conditionParts = firstWhereClause.split(/\s+(AND|OR)\s+/i);
@@ -1635,7 +1632,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Process second table data
         let secondData = secondTable.data;
         if (secondWhereClause) {
           const conditionParts = secondWhereClause.split(/\s+(AND|OR)\s+/i);
@@ -1778,9 +1774,8 @@ export default function SqlEditor() {
             const resultRow: Record<string, string | number | string[] | null> =
               {};
             if (selectedFields.includes("*")) {
-              // Expand * to all columns
               table.columns.forEach((col) => {
-                const alias = col.name; // Use column name as alias if no alias is provided
+                const alias = col.name;
                 resultRow[alias] = row[col.name as keyof PowerRanger];
               });
             } else {
@@ -1799,7 +1794,6 @@ export default function SqlEditor() {
           ...processTableData(secondData, secondTable, secondFields),
         ];
 
-        // Remove duplicates (UNION implies DISTINCT)
         const seen = new Set<string>();
         resultData = resultData.filter((row) => {
           const key = JSON.stringify(
@@ -1817,7 +1811,6 @@ export default function SqlEditor() {
           return true;
         });
 
-        // Apply ORDER BY
         if (orderByColumn) {
           const columnType = firstTable.columns.find(
             (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
@@ -1853,7 +1846,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Apply LIMIT
         if (limitValue !== undefined) {
           const limit = parseInt(limitValue, 10);
           if (isNaN(limit) || limit <= 0) {
@@ -4552,7 +4544,6 @@ export default function SqlEditor() {
       return Array.from(columns);
     };
 
-    // Validate UNION compatibility (same number of columns and compatible data types)
     const validateUnion = (
       tablesInQuery: { name: string; alias?: string }[]
     ): CompletionOption[] => {
@@ -4566,7 +4557,6 @@ export default function SqlEditor() {
           const table = tables[tablesInQuery[i].name];
           if (!table) continue;
 
-          // Check number of columns
           if (table.columns.length !== columnCount) {
             warnings.push({
               label: "",
@@ -4577,7 +4567,6 @@ export default function SqlEditor() {
             continue;
           }
 
-          // Check data type compatibility
           for (let j = 0; j < columnCount; j++) {
             const firstColType = firstTableColumns[j].type;
             const currColType = table.columns[j].type;
@@ -4599,7 +4588,6 @@ export default function SqlEditor() {
       return warnings;
     };
 
-    // Extract tables from the query, including those after UNION
     const tableMatches = fullDocText.matchAll(
       /from\s+(\w+)(?:\s+(\w+))?\s*(?:(?:inner|left|right|full(?:\s+outer)?|cross)\s+join\s+(\w+)(?:\s+(\w+))?)*\s*(?:(?:union\s+select\s+\*?\s+from\s+(\w+)(?:\s+(\w+))?)?)*/gi
     );
@@ -5100,8 +5088,6 @@ export default function SqlEditor() {
       }
     }
 
-    // 10. After UNION, suggest SELECT
-
     // 11. After UNION SELECT, suggest columns from all tables, *, aggregates, DISTINCT, CASE
     if (/union\s+select\s*$/i.test(docText)) {
       const options: CompletionOption[] = [];
@@ -5301,7 +5287,6 @@ export default function SqlEditor() {
       }
     }
 
-    // [Existing conditions 16-47 remain unchanged, but with UNION validation added where relevant]
     // 16. After CROSS JOIN, suggest all table names (including self-join)
     if (
       new RegExp(
@@ -6385,7 +6370,7 @@ export default function SqlEditor() {
       }
     }
 
-    // 44. After ON, suggest columns from both tables (including self-join with distinct aliases)
+    // 44. After ON, suggest columns from both tables
     if (
       new RegExp(
         `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s*$`,
@@ -6397,11 +6382,13 @@ export default function SqlEditor() {
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
-        const firstAlias = match[2]?.toLowerCase() || firstTable;
         const secondTable = match[4].toLowerCase();
-        const secondAlias = match[5]?.toLowerCase() || secondTable;
         if (tables[firstTable] && tables[secondTable]) {
-          if (firstTable === secondTable && firstAlias === secondAlias) {
+          if (
+            firstTable === secondTable &&
+            (match[2]?.toLowerCase() || firstTable) ===
+              (match[5]?.toLowerCase() || secondTable)
+          ) {
             const options: CompletionOption[] = [
               {
                 label: "",
@@ -6417,7 +6404,7 @@ export default function SqlEditor() {
           const firstTableColumns = getColumnOptions(
             [],
             tables[firstTable],
-            firstAlias
+            match[2]?.toLowerCase() || firstTable
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6427,7 +6414,7 @@ export default function SqlEditor() {
           const secondTableColumns = getColumnOptions(
             [],
             tables[secondTable],
-            secondAlias
+            match[5]?.toLowerCase() || secondTable
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6456,9 +6443,7 @@ export default function SqlEditor() {
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
-        const firstAlias = match[2]?.toLowerCase() || firstTable;
         const secondTable = match[4].toLowerCase();
-        const secondAlias = match[5]?.toLowerCase() || secondTable;
         const tableOrAlias = match[6].toLowerCase();
         const columnName = match[7].toLowerCase();
         const targetTable = availableTables.find(
@@ -6513,7 +6498,6 @@ export default function SqlEditor() {
         }
       }
     }
-
     // 46. After ON table1.column =, suggest columns from the other table
     if (
       new RegExp(
