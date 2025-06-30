@@ -4548,37 +4548,40 @@ export default function SqlEditor() {
     ): CompletionOption[] => {
       const warnings: CompletionOption[] = [];
       if (tablesInQuery.length > 1) {
-        const firstTable = tables[tablesInQuery[0].name];
-        const columnCount = firstTable?.columns.length;
-        const firstTableColumns = firstTable?.columns || [];
-    
-        for (let i = 1; i < tablesInQuery.length; i++) {
-          const table = tables[tablesInQuery[i].name];
-          if (!table) continue;
+        const { columns: firstTableColumns, tableName: firstTableName } =
+          tables[tablesInQuery[0].name] || {
+            columns: [],
+            tableName: tablesInQuery[0].name,
+          };
+        const columnCount = firstTableColumns.length;
 
-          if (table.columns.length !== columnCount) {
+        for (let i = 1; i < tablesInQuery.length; i++) {
+          const { columns: secondTableColumns, tableName } = tables[
+            tablesInQuery[i].name
+          ] || { columns: [], tableName: tablesInQuery[i].name };
+          if (!secondTableColumns.length) continue;
+
+          if (secondTableColumns.length !== columnCount) {
             warnings.push({
               label: "",
               type: "text",
               apply: "",
-              detail: `Warning: Table ${table.tableName} has ${table.columns.length} columns, but ${firstTable.tableName} has ${columnCount} columns. UNION requires same number of columns.`,
+              detail: `Warning: Table ${tableName} has ${secondTableColumns.length} columns, but ${firstTableName} has ${columnCount} columns. UNION requires same number of columns.`,
             });
             continue;
           }
 
           for (let j = 0; j < columnCount; j++) {
             const firstColType = firstTableColumns[j].type;
-            const currColType = table.columns[j].type;
+            const currColType = secondTableColumns[j].type;
             if (firstColType !== currColType) {
               warnings.push({
                 label: "",
                 type: "text",
                 apply: "",
-                detail: `Warning: Column ${j + 1} in ${
-                  table.tableName
-                } (type: ${currColType}) is incompatible with ${
-                  firstTable.tableName
-                } (type: ${firstColType}). UNION requires compatible data types.`,
+                detail: `Warning: Column ${
+                  j + 1
+                } in ${tableName} (type: ${currColType}) is incompatible with ${firstTableName} (type: ${firstColType}). UNION requires compatible data types.`,
               });
             }
           }
@@ -4586,7 +4589,7 @@ export default function SqlEditor() {
       }
       return warnings;
     };
-
+    
     const tableMatches = fullDocText.matchAll(
       /from\s+(\w+)(?:\s+(\w+))?\s*(?:(?:inner|left|right|full(?:\s+outer)?|cross)\s+join\s+(\w+)(?:\s+(\w+))?)*\s*(?:(?:union\s+select\s+\*?\s+from\s+(\w+)(?:\s+(\w+))?)?)*/gi
     );
