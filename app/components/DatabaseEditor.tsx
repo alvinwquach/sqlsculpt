@@ -6485,8 +6485,7 @@ export default function SqlEditor() {
       }
     }
 
-    // 46. After ON table1.column =, suggest columns from the other table
-    // Case 46: After ON table1.column =, suggest columns from the other table
+// Case 46: After ON table1.column =, suggest columns from the other table
 if (
   new RegExp(
     `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
@@ -6494,7 +6493,7 @@ if (
   ).test(docText)
 ) {
   const match = docText.match(
-    /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
+    /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
   );
   if (match) {
     const firstTable = match[1].toLowerCase();
@@ -6513,14 +6512,14 @@ if (
         (col) => col.name.toLowerCase() === leftColumn
       )
     ) {
-      const firstAlias = match[2]?.toLowerCase() || firstTable;
-      const secondAlias = match[5]?.toLowerCase() || secondTable;
-      const otherTable = firstTable === leftTable.name ? secondTable : firstTable;
-      const otherAlias = firstTable === leftTable.name ? secondAlias : firstAlias;
+      const otherTable =
+        firstTable === leftTable.name ? secondTable : firstTable;
       const options: CompletionOption[] = getColumnOptions(
         [],
         tables[otherTable],
-        otherAlias
+        firstTable === leftTable.name
+          ? match[5]?.toLowerCase() || secondTable
+          : match[2]?.toLowerCase() || firstTable
       ).map((opt) => ({
         ...opt,
         detail: `${opt.detail}${
@@ -6531,7 +6530,7 @@ if (
       return { from: word?.from ?? cursorPos, options };
     }
   }
-}
+}    
 
     // 47. After ON table1.column = table2.column, suggest AND, WHERE, GROUP BY, ORDER BY, LIMIT, or UNION
     if (
@@ -6545,9 +6544,7 @@ if (
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
-        const firstAlias = match[2]?.toLowerCase() || firstTable;
         const secondTable = match[4].toLowerCase();
-        const secondAlias = match[5]?.toLowerCase() || secondTable;
         const leftTableOrAlias = match[6].toLowerCase();
         const leftColumn = match[7].toLowerCase();
         const rightTableOrAlias = match[8].toLowerCase();
@@ -6626,11 +6623,13 @@ if (
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
-        const firstAlias = match[2]?.toLowerCase() || firstTable;
         const secondTable = match[4].toLowerCase();
-        const secondAlias = match[5]?.toLowerCase() || secondTable;
         if (tables[firstTable] && tables[secondTable]) {
-          if (firstTable === secondTable && firstAlias === secondAlias) {
+          if (
+            firstTable === secondTable &&
+            (match[2]?.toLowerCase() || firstTable) ===
+              (match[5]?.toLowerCase() || secondTable)
+          ) {
             const options: CompletionOption[] = [
               {
                 label: "",
@@ -6645,7 +6644,8 @@ if (
           }
           const firstTableColumns = getColumnOptions(
             [],
-            tables[firstTable]
+            tables[firstTable],
+            match[2]?.toLowerCase() || firstTable
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6654,7 +6654,8 @@ if (
           }));
           const secondTableColumns = getColumnOptions(
             [],
-            tables[secondTable]
+            tables[secondTable],
+            match[5]?.toLowerCase() || secondTable
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
