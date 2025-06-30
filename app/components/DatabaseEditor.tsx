@@ -6403,8 +6403,7 @@ export default function SqlEditor() {
           }
           const firstTableColumns = getColumnOptions(
             [],
-            tables[firstTable],
-            match[2]?.toLowerCase() || firstTable
+            tables[firstTable]
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6413,8 +6412,7 @@ export default function SqlEditor() {
           }));
           const secondTableColumns = getColumnOptions(
             [],
-            tables[secondTable],
-            match[5]?.toLowerCase() || secondTable
+            tables[secondTable]
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6648,8 +6646,8 @@ export default function SqlEditor() {
           }
           const firstTableColumns = getColumnOptions(
             [],
-            tables[firstTable],
-            firstAlias
+            tables[firstTable]
+            // firstAlias
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6658,8 +6656,8 @@ export default function SqlEditor() {
           }));
           const secondTableColumns = getColumnOptions(
             [],
-            tables[secondTable],
-            secondAlias
+            tables[secondTable]
+            // secondAlias
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
