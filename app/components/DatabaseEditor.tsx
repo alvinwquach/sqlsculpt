@@ -6485,52 +6485,52 @@ export default function SqlEditor() {
       }
     }
 
-// Case 46: After ON table1.column =, suggest columns from the other table
-if (
-  new RegExp(
-    `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
-    "i"
-  ).test(docText)
-) {
-  const match = docText.match(
-    /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
-  );
-  if (match) {
-    const firstTable = match[1].toLowerCase();
-    const secondTable = match[4].toLowerCase();
-    const leftTableOrAlias = match[6].toLowerCase();
-    const leftColumn = match[7].toLowerCase();
-    const leftTable = availableTables.find(
-      ({ name, alias }) =>
-        leftTableOrAlias === name || leftTableOrAlias === alias
-    );
+    // 46. After ON table1.column =, suggest columns from the other table
     if (
-      leftTable &&
-      tables[firstTable] &&
-      tables[secondTable] &&
-      tables[leftTable.name]?.columns.some(
-        (col) => col.name.toLowerCase() === leftColumn
-      )
+      new RegExp(
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*$`,
+        "i"
+      ).test(docText)
     ) {
-      const otherTable =
-        firstTable === leftTable.name ? secondTable : firstTable;
-      const options: CompletionOption[] = getColumnOptions(
-        [],
-        tables[otherTable],
-        firstTable === leftTable.name
-          ? match[5]?.toLowerCase() || secondTable
-          : match[2]?.toLowerCase() || firstTable
-      ).map((opt) => ({
-        ...opt,
-        detail: `${opt.detail}${
-          firstTable === secondTable ? " (self-join)" : ""
-        }`,
-      }));
-      options.push(...validateUnion(tablesInQuery));
-      return { from: word?.from ?? cursorPos, options };
+      const match = docText.match(
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
+      );
+      if (match) {
+        const firstTable = match[1].toLowerCase();
+        const secondTable = match[4].toLowerCase();
+        const leftTableOrAlias = match[6].toLowerCase();
+        const leftColumn = match[7].toLowerCase();
+        const leftTable = availableTables.find(
+          ({ name, alias }) =>
+            leftTableOrAlias === name || leftTableOrAlias === alias
+        );
+        if (
+          leftTable &&
+          tables[firstTable] &&
+          tables[secondTable] &&
+          tables[leftTable.name]?.columns.some(
+            (col) => col.name.toLowerCase() === leftColumn
+          )
+        ) {
+          const otherTable =
+            firstTable === leftTable.name ? secondTable : firstTable;
+          const options: CompletionOption[] = getColumnOptions(
+            [],
+            tables[otherTable],
+            firstTable === leftTable.name
+              ? match[5]?.toLowerCase() || secondTable
+              : match[2]?.toLowerCase() || firstTable
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              firstTable === secondTable ? " (self-join)" : ""
+            }`,
+          }));
+          options.push(...validateUnion(tablesInQuery));
+          return { from: word?.from ?? cursorPos, options };
+        }
+      }
     }
-  }
-}    
 
     // 47. After ON table1.column = table2.column, suggest AND, WHERE, GROUP BY, ORDER BY, LIMIT, or UNION
     if (
