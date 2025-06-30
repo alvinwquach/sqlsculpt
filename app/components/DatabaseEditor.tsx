@@ -4548,40 +4548,37 @@ export default function SqlEditor() {
     ): CompletionOption[] => {
       const warnings: CompletionOption[] = [];
       if (tablesInQuery.length > 1) {
-        const { columns: firstTableColumns, tableName: firstTableName } =
-          tables[tablesInQuery[0].name] || {
-            columns: [],
-            tableName: tablesInQuery[0].name,
-          };
-        const columnCount = firstTableColumns.length;
+        const firstTable = tables[tablesInQuery[0].name];
+        const columnCount = firstTable?.columns.length;
+        const firstTableColumns = firstTable?.columns || [];
 
         for (let i = 1; i < tablesInQuery.length; i++) {
-          const { columns: secondTableColumns, tableName } = tables[
-            tablesInQuery[i].name
-          ] || { columns: [], tableName: tablesInQuery[i].name };
-          if (!secondTableColumns.length) continue;
+          const secondTable = tables[tablesInQuery[i].name];
+          if (!secondTable) continue;
 
-          if (secondTableColumns.length !== columnCount) {
+          if (secondTable.columns.length !== columnCount) {
             warnings.push({
               label: "",
               type: "text",
               apply: "",
-              detail: `Warning: Table ${tableName} has ${secondTableColumns.length} columns, but ${firstTableName} has ${columnCount} columns. UNION requires same number of columns.`,
+              detail: `Warning: Table ${secondTable.tableName} has ${secondTable.columns.length} columns, but ${firstTable.tableName} has ${columnCount} columns. UNION requires same number of columns.`,
             });
             continue;
           }
 
           for (let j = 0; j < columnCount; j++) {
             const firstColType = firstTableColumns[j].type;
-            const currColType = secondTableColumns[j].type;
+            const currColType = secondTable.columns[j].type;
             if (firstColType !== currColType) {
               warnings.push({
                 label: "",
                 type: "text",
                 apply: "",
-                detail: `Warning: Column ${
-                  j + 1
-                } in ${tableName} (type: ${currColType}) is incompatible with ${firstTableName} (type: ${firstColType}). UNION requires compatible data types.`,
+                detail: `Warning: Column ${j + 1} in ${
+                  secondTable.tableName
+                } (type: ${currColType}) is incompatible with ${
+                  firstTable.tableName
+                } (type: ${firstColType}). UNION requires compatible data types.`,
               });
             }
           }
@@ -4589,7 +4586,7 @@ export default function SqlEditor() {
       }
       return warnings;
     };
-    
+
     const tableMatches = fullDocText.matchAll(
       /from\s+(\w+)(?:\s+(\w+))?\s*(?:(?:inner|left|right|full(?:\s+outer)?|cross)\s+join\s+(\w+)(?:\s+(\w+))?)*\s*(?:(?:union\s+select\s+\*?\s+from\s+(\w+)(?:\s+(\w+))?)?)*/gi
     );
@@ -6546,8 +6543,6 @@ export default function SqlEditor() {
         /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s*$/i
       );
       if (match) {
-        const firstTable = match[1].toLowerCase();
-        const secondTable = match[4].toLowerCase();
         const leftTableOrAlias = match[6].toLowerCase();
         const leftColumn = match[7].toLowerCase();
         const rightTableOrAlias = match[8].toLowerCase();
