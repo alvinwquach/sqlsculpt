@@ -6648,8 +6648,7 @@ export default function SqlEditor() {
           }
           const firstTableColumns = getColumnOptions(
             [],
-            tables[firstTable],
-            firstAlias
+            tables[firstTable]
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
@@ -6658,8 +6657,7 @@ export default function SqlEditor() {
           }));
           const secondTableColumns = getColumnOptions(
             [],
-            tables[secondTable],
-            secondAlias
+            tables[secondTable]
           ).map((opt) => ({
             ...opt,
             detail: `${opt.detail}${
