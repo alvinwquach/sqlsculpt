@@ -5330,39 +5330,39 @@ export default function SqlEditor() {
       const match = docText.match(
         /from\s+(\w+)(?:\s+(\w+))?\s+cross\s+join\s+(\w+)(?:\s+(\w+))?\s*$/i
       );
-      if (match) {
-        const firstTable = match[1].toLowerCase();
-        const secondTable = match[3].toLowerCase();
-        if (tables[firstTable] && tables[secondTable]) {
-          const options: CompletionOption[] = [
-            {
-              label: "WHERE",
-              type: "keyword",
-              apply: " WHERE ",
-              detail: "Filter rows",
-            },
-            {
-              label: "GROUP BY",
-              type: "keyword",
-              apply: " GROUP BY ",
-              detail: "Group results by columns",
-            },
-            {
-              label: "ORDER BY",
-              type: "keyword",
-              apply: " ORDER BY ",
-              detail: "Sort results",
-            },
-            {
-              label: "LIMIT",
-              type: "keyword",
-              apply: " LIMIT ",
-              detail: "Limit number of rows",
-            },
-          ];
-          options.push(...validateUnion(tablesInQuery));
-          return { from: word?.from ?? cursorPos, options };
-        }
+      if (
+        match &&
+        tables[match[1].toLowerCase()] &&
+        tables[match[3].toLowerCase()]
+      ) {
+        const options: CompletionOption[] = [
+          {
+            label: "WHERE",
+            type: "keyword",
+            apply: " WHERE ",
+            detail: "Filter rows",
+          },
+          {
+            label: "GROUP BY",
+            type: "keyword",
+            apply: " GROUP BY ",
+            detail: "Group results by columns",
+          },
+          {
+            label: "ORDER BY",
+            type: "keyword",
+            apply: " ORDER BY ",
+            detail: "Sort results",
+          },
+          {
+            label: "LIMIT",
+            type: "keyword",
+            apply: " LIMIT ",
+            detail: "Limit number of rows",
+          },
+        ];
+        options.push(...validateUnion(tablesInQuery));
+        return { from: word?.from ?? cursorPos, options };
       }
     }
 
@@ -6350,23 +6350,25 @@ export default function SqlEditor() {
       const match = docText.match(
         /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s*$/i
       );
-      if (match) {
-        const firstTable = match[1].toLowerCase();
-        const secondTable = match[4].toLowerCase();
-        if (tables[firstTable] && tables[secondTable]) {
-          const options: CompletionOption[] = [
-            {
-              label: "ON",
-              type: "keyword",
-              apply: " ON ",
-              detail: `Specify join condition${
-                firstTable === secondTable ? " (self-join)" : ""
-              }`,
-            },
-          ];
-          options.push(...validateUnion(tablesInQuery));
-          return { from: word?.from ?? cursorPos, options };
-        }
+      if (
+        match &&
+        tables[match[1].toLowerCase()] &&
+        tables[match[4].toLowerCase()]
+      ) {
+        const options: CompletionOption[] = [
+          {
+            label: "ON",
+            type: "keyword",
+            apply: " ON ",
+            detail: `Specify join condition${
+              match[1].toLowerCase() === match[4].toLowerCase()
+                ? " (self-join)"
+                : ""
+            }`,
+          },
+        ];
+        options.push(...validateUnion(tablesInQuery));
+        return { from: word?.from ?? cursorPos, options };
       }
     }
 
@@ -6498,6 +6500,7 @@ export default function SqlEditor() {
         }
       }
     }
+
     // 46. After ON table1.column =, suggest columns from the other table
     if (
       new RegExp(
