@@ -4551,7 +4551,7 @@ export default function SqlEditor() {
         const firstTable = tables[tablesInQuery[0].name];
         const columnCount = firstTable?.columns.length;
         const firstTableColumns = firstTable?.columns || [];
-
+    
         for (let i = 1; i < tablesInQuery.length; i++) {
           const table = tables[tablesInQuery[i].name];
           if (!table) continue;
