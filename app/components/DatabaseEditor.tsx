@@ -2257,7 +2257,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Apply LIMIT
         if (limitValue !== undefined) {
           const limit = parseInt(limitValue, 10);
           if (isNaN(limit) || limit <= 0) {
@@ -4790,7 +4789,6 @@ export default function SqlEditor() {
           options.push(...getAggregateOptions(tables[name]));
         }
       });
-      // Add UNION warnings if applicable
       options.push(...validateUnion(tablesInQuery));
       return { from: word?.from ?? cursorPos, options };
     }
@@ -6504,46 +6502,58 @@ export default function SqlEditor() {
     // 46. After ON table1.column =, suggest columns from the other table
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*(=)\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s+and\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*$/i
+        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s+and\s*$/i
       );
       if (match) {
         const firstTable = match[1].toLowerCase();
         const firstAlias = match[2]?.toLowerCase() || firstTable;
         const secondTable = match[4].toLowerCase();
         const secondAlias = match[5]?.toLowerCase() || secondTable;
-        const tableOrAlias = match[6].toLowerCase();
-        const columnName = match[7].toLowerCase();
-        const targetTable = availableTables.find(
-          ({ name, alias }) => tableOrAlias === name || tableOrAlias === alias
-        );
-        if (
-          targetTable &&
-          tables[targetTable.name]?.columns.some(
-            (col) => col.name.toLowerCase() === columnName
-          )
-        ) {
-          const otherTable = availableTables.find(
-            ({ name, alias }) =>
-              (name !== targetTable.name || alias !== tableOrAlias) &&
-              (name === firstTable ||
-                alias === firstAlias ||
-                name === secondTable ||
-                alias === secondAlias)
-          );
-          if (otherTable && tables[otherTable.name]) {
-            const options: CompletionOption[] = getColumnOptions(
-              [],
-              tables[otherTable.name],
-              otherTable.alias || otherTable.name
-            );
+        if (tables[firstTable] && tables[secondTable]) {
+          if (firstTable === secondTable && firstAlias === secondAlias) {
+            const options: CompletionOption[] = [
+              {
+                label: "",
+                type: "text",
+                apply: "",
+                detail:
+                  "Error: Self-join requires distinct aliases for the same table",
+              },
+            ];
             options.push(...validateUnion(tablesInQuery));
             return { from: word?.from ?? cursorPos, options };
           }
+          const firstTableColumns = getColumnOptions(
+            [],
+            tables[firstTable],
+            firstAlias
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              firstTable === secondTable ? " (self-join)" : ""
+            }`,
+          }));
+          const secondTableColumns = getColumnOptions(
+            [],
+            tables[secondTable],
+            secondAlias
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              firstTable === secondTable ? " (self-join)" : ""
+            }`,
+          }));
+          const options: CompletionOption[] = [
+            ...firstTableColumns,
+            ...secondTableColumns,
+          ];
+          options.push(...validateUnion(tablesInQuery));
+          return { from: word?.from ?? cursorPos, options };
         }
       }
     }
