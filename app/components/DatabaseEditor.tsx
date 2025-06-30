@@ -6434,64 +6434,60 @@ export default function SqlEditor() {
     // 45. After ON table1.column, suggest operators
     if (
       new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*$`,
+        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s+and\\s*$`,
         "i"
       ).test(docText)
     ) {
       const match = docText.match(
-        /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*$/i
+        /from\s+(\w+)(?:\\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s+and\s*$/i
       );
       if (match) {
-        const firstTable = match[1].toLowerCase();
-        const secondTable = match[4].toLowerCase();
-        const tableOrAlias = match[6].toLowerCase();
-        const columnName = match[7].toLowerCase();
-        const targetTable = availableTables.find(
-          ({ name, alias }) => tableOrAlias === name || tableOrAlias === alias
-        );
-        if (
-          targetTable &&
-          tables[targetTable.name]?.columns.some(
-            (col) => col.name.toLowerCase() === columnName
-          )
-        ) {
+        const firstAlias = match[2]?.toLowerCase() || match[1].toLowerCase();
+        const secondAlias = match[5]?.toLowerCase() || match[4].toLowerCase();
+        if (tables[match[1].toLowerCase()] && tables[match[4].toLowerCase()]) {
+          if (
+            match[1].toLowerCase() === match[4].toLowerCase() &&
+            firstAlias === secondAlias
+          ) {
+            const options: CompletionOption[] = [
+              {
+                label: "",
+                type: "text",
+                apply: "",
+                detail:
+                  "Error: Self-join requires distinct aliases for the same table",
+              },
+            ];
+            options.push(...validateUnion(tablesInQuery));
+            return { from: word?.from ?? cursorPos, options };
+          }
+          const firstTableColumns = getColumnOptions(
+            [],
+            tables[match[1].toLowerCase()],
+            firstAlias
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              match[1].toLowerCase() === match[4].toLowerCase()
+                ? " (self-join)"
+                : ""
+            }`,
+          }));
+          const secondTableColumns = getColumnOptions(
+            [],
+            tables[match[4].toLowerCase()],
+            secondAlias
+          ).map((opt) => ({
+            ...opt,
+            detail: `${opt.detail}${
+              match[1].toLowerCase() === match[4].toLowerCase()
+                ? " (self-join)"
+                : ""
+            }`,
+          }));
           const options: CompletionOption[] = [
-            {
-              label: "=",
-              type: "operator",
-              apply: "= ",
-              detail: "Equal to",
-            },
-            {
-              label: "!=",
-              type: "operator",
-              apply: "!= ",
-              detail: "Not equal to",
-            },
-            {
-              label: ">",
-              type: "operator",
-              apply: "> ",
-              detail: "Greater than",
-            },
-            {
-              label: "<",
-              type: "operator",
-              apply: "< ",
-              detail: "Less than",
-            },
-            {
-              label: ">=",
-              type: "operator",
-              apply: ">= ",
-              detail: "Greater than or equal to",
-            },
-            {
-              label: "<=",
-              type: "operator",
-              apply: "<= ",
-              detail: "Less than or equal to",
-            },
+            ...firstTableColumns,
+            ...secondTableColumns,
           ];
           options.push(...validateUnion(tablesInQuery));
           return { from: word?.from ?? cursorPos, options };
@@ -6509,51 +6505,69 @@ export default function SqlEditor() {
       const match = docText.match(
         /from\s+(\w+)(?:\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s+and\s*$/i
       );
-      if (match) {
-        const firstTable = match[1].toLowerCase();
-        const firstAlias = match[2]?.toLowerCase() || firstTable;
-        const secondTable = match[4].toLowerCase();
-        const secondAlias = match[5]?.toLowerCase() || secondTable;
-        if (tables[firstTable] && tables[secondTable]) {
-          if (firstTable === secondTable && firstAlias === secondAlias) {
+      if (
+        new RegExp(
+          `from\\s+(\\w+)(?:\\s+(\\w+))?\\s+(inner|left|right|full(?:\\s+outer)?)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?\\s+on\\s+(\\w+)\\.(\\w+)\\s*=\\s*(\\w+)\\.(\\w+)\\s+and\\s*$`,
+          "i"
+        ).test(docText)
+      ) {
+        const match = docText.match(
+          /from\s+(\w+)(?:\\s+(\w+))?\s+(inner|left|right|full(?:\s+outer)?)\s+join\s+(\w+)(?:\\s+(\w+))?\s+on\s+(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)\s+and\s*$/i
+        );
+        if (match) {
+          const firstAlias = match[2]?.toLowerCase() || match[1].toLowerCase();
+          const secondAlias = match[5]?.toLowerCase() || match[4].toLowerCase();
+          if (
+            tables[match[1].toLowerCase()] &&
+            tables[match[4].toLowerCase()]
+          ) {
+            if (
+              match[1].toLowerCase() === match[4].toLowerCase() &&
+              firstAlias === secondAlias
+            ) {
+              const options: CompletionOption[] = [
+                {
+                  label: "",
+                  type: "text",
+                  apply: "",
+                  detail:
+                    "Error: Self-join requires distinct aliases for the same table",
+                },
+              ];
+              options.push(...validateUnion(tablesInQuery));
+              return { from: word?.from ?? cursorPos, options };
+            }
+            const firstTableColumns = getColumnOptions(
+              [],
+              tables[match[1].toLowerCase()],
+              firstAlias
+            ).map((opt) => ({
+              ...opt,
+              detail: `${opt.detail}${
+                match[1].toLowerCase() === match[4].toLowerCase()
+                  ? " (self-join)"
+                  : ""
+              }`,
+            }));
+            const secondTableColumns = getColumnOptions(
+              [],
+              tables[match[4].toLowerCase()],
+              secondAlias
+            ).map((opt) => ({
+              ...opt,
+              detail: `${opt.detail}${
+                match[1].toLowerCase() === match[4].toLowerCase()
+                  ? " (self-join)"
+                  : ""
+              }`,
+            }));
             const options: CompletionOption[] = [
-              {
-                label: "",
-                type: "text",
-                apply: "",
-                detail:
-                  "Error: Self-join requires distinct aliases for the same table",
-              },
+              ...firstTableColumns,
+              ...secondTableColumns,
             ];
             options.push(...validateUnion(tablesInQuery));
             return { from: word?.from ?? cursorPos, options };
           }
-          const firstTableColumns = getColumnOptions(
-            [],
-            tables[firstTable],
-            firstAlias
-          ).map((opt) => ({
-            ...opt,
-            detail: `${opt.detail}${
-              firstTable === secondTable ? " (self-join)" : ""
-            }`,
-          }));
-          const secondTableColumns = getColumnOptions(
-            [],
-            tables[secondTable],
-            secondAlias
-          ).map((opt) => ({
-            ...opt,
-            detail: `${opt.detail}${
-              firstTable === secondTable ? " (self-join)" : ""
-            }`,
-          }));
-          const options: CompletionOption[] = [
-            ...firstTableColumns,
-            ...secondTableColumns,
-          ];
-          options.push(...validateUnion(tablesInQuery));
-          return { from: word?.from ?? cursorPos, options };
         }
       }
     }
