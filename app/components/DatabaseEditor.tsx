@@ -3683,14 +3683,12 @@ export default function SqlEditor() {
           return false;
         }
 
-        // Parse WHERE clause with EXISTS
         let filteredData = mainTable.data;
         if (whereClause) {
           const existsSubqueryMatch = whereClause.match(
             /(NOT\s+)?EXISTS\s*\(\s*SELECT\s+\*\s+FROM\s+([\w_]+)\s+WHERE\s+(.+?)\s*\)/i
           );
           if (!existsSubqueryMatch) {
-            // Handle non-EXISTS WHERE clauses or throw error if unsupported
             const conditionParts = whereClause.split(/\s+(AND|OR)\s+/i);
             const conditions: Array<{
               column?: string;
@@ -3818,7 +3816,6 @@ export default function SqlEditor() {
               return result;
             });
           } else {
-            // Handle EXISTS subquery
             const [, notExists, subTableName, subWhereClause] =
               existsSubqueryMatch;
             const isNotExists = !!notExists;
@@ -3829,7 +3826,6 @@ export default function SqlEditor() {
               return false;
             }
 
-            // Parse subquery WHERE clause (expecting table1.col = table2.col)
             const subConditionMatch = subWhereClause.match(
               /^([\w_]+)\.(\w+)\s*=\s*([\w_]+)\.(\w+)$/i
             );
@@ -3841,8 +3837,7 @@ export default function SqlEditor() {
               return false;
             }
 
-            const [, subTableAlias, subColumn, outerTableAlias, outerColumn] =
-              subConditionMatch;
+            const [subColumn, outerTableAlias, outerColumn] = subConditionMatch;
             if (outerTableAlias.toLowerCase() !== tableName.toLowerCase()) {
               setResult(
                 `Error: Subquery must reference main table '${tableName}', got '${outerTableAlias}'`
@@ -3851,7 +3846,6 @@ export default function SqlEditor() {
               return false;
             }
 
-            // Validate columns
             if (
               !subTable.columns.some(
                 (col) => col.name.toLowerCase() === subColumn.toLowerCase()
@@ -3871,7 +3865,6 @@ export default function SqlEditor() {
               return false;
             }
 
-            // Filter data based on EXISTS
             filteredData = filteredData.filter((mainRow) => {
               const outerValue = mainRow[outerColumn as keyof PowerRanger];
               const subResult = subTable.data.some((subRow) => {
@@ -3883,7 +3876,6 @@ export default function SqlEditor() {
           }
         }
 
-        // Process fields
         let resultData: Array<
           Partial<PowerRanger> & {
             [key: string]: string | number | string[] | null;
@@ -3907,7 +3899,6 @@ export default function SqlEditor() {
           return resultRow;
         });
 
-        // Handle ORDER BY
         if (orderByColumn) {
           const columnType = mainTable.columns.find(
             (col) => col.name.toLowerCase() === orderByColumn.toLowerCase()
@@ -3943,7 +3934,6 @@ export default function SqlEditor() {
           });
         }
 
-        // Handle LIMIT
         if (limitValue !== undefined) {
           const limit = parseInt(limitValue, 10);
           if (isNaN(limit) || limit <= 0) {
@@ -5873,7 +5863,6 @@ export default function SqlEditor() {
         "i"
       ).test(docText)
     ) {
-      console.log("Condition 20: After WHERE with conditions or AND/OR");
       const match = docText.match(
         /from\s+(\w+)(?:\s+(\w+))?\s*(?:(inner|left|right|full(?:\s+outer)?|cross)\s+join\s+(\w+)(?:\s+(\w+))?)*\s+where\s+([\w\.'=<>!\s]+)(?:\s+(?:and|or)\s*)?$/i
       );
@@ -5906,67 +5895,6 @@ export default function SqlEditor() {
           }
         );
       }
-      options.push(...validateUnion(tablesInQuery));
-      return { from: word?.from ?? cursorPos, options };
-    }
-
-    // 20.5: Handle invalid double WHERE (optional warning)
-    if (
-      new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right|full(?:\\s+outer)?|cross)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)*\\s+where\\s+where\\s*$`,
-        "i"
-      ).test(docText)
-    ) {
-      console.log("Condition 20.5: Invalid double WHERE");
-      const options: CompletionOption[] = [];
-      availableTables.forEach(({ name, alias }) => {
-        if (tables[name]) {
-          options.push(...getColumnOptions([], tables[name], alias));
-        }
-      });
-      options.push(
-        {
-          label: "EXISTS",
-          type: "keyword",
-          apply: "EXISTS (",
-          detail: "Check for existence of rows in subquery",
-          boost: 90,
-        },
-        {
-          label: "NOT EXISTS",
-          type: "keyword",
-          apply: "NOT EXISTS (",
-          detail: "Check for non-existence of rows in subquery",
-          boost: 90,
-        },
-        {
-          label: "",
-          type: "text",
-          apply: "",
-          detail:
-            "Warning: Multiple WHERE clauses are invalid SQL. Did you mean a single WHERE?",
-        }
-      );
-      options.push(...validateUnion(tablesInQuery));
-      return { from: word?.from ?? cursorPos, options };
-    }
-
-    // 20.6: Handle invalid double WHERE followed by EXISTS or NOT EXISTS
-    if (
-      new RegExp(
-        `from\\s+(\\w+)(?:\\s+(\\w+))?\\s*(?:(inner|left|right|full(?:\\s+outer)?|cross)\\s+join\\s+(\\w+)(?:\\s+(\\w+))?)*\\s+where\\s+where\\s+(?:not\\s+)?exists\\s*\\(\\s*$`,
-        "i"
-      ).test(docText)
-    ) {
-      console.log("Condition 20.6: Double WHERE followed by EXISTS/NOT EXISTS");
-      const options: CompletionOption[] = getSubqueryOptions(); // Suggest SELECT
-      options.push({
-        label: "",
-        type: "text",
-        apply: "",
-        detail:
-          "Warning: Multiple WHERE clauses are invalid SQL. Did you mean a single WHERE?",
-      });
       options.push(...validateUnion(tablesInQuery));
       return { from: word?.from ?? cursorPos, options };
     }
@@ -7179,7 +7107,6 @@ export default function SqlEditor() {
         "i"
       ).test(docText)
     ) {
-      console.log("Condition 49: After WHERE (no conditions)");
       const options: CompletionOption[] = [];
       availableTables.forEach(({ name, alias }) => {
         if (tables[name]) {
