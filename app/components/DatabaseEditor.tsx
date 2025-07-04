@@ -3629,7 +3629,6 @@ export default function SqlEditor() {
           limitValue,
         ] = existsMatch;
 
-        // Validate main table
         const mainTable = tables[tableName.toLowerCase()];
         if (!mainTable) {
           setResult(`Error: Table '${tableName}' not found`);
@@ -3637,7 +3636,6 @@ export default function SqlEditor() {
           return false;
         }
 
-        // Parse fields
         const fields: Array<{ name: string; alias?: string }> = [];
         const rawFieldsWithAliases = rawFields
           .split(/(?<!\([^()]*),(?![^()]*\))/)
